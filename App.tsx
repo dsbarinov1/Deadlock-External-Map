@@ -1,9 +1,8 @@
+
 import { useState, useEffect } from 'react';
 import BackgroundWindow from './windows/BackgroundWindow';
 import DesktopWindow from './windows/DesktopWindow';
-import { WINDOW_NAMES } from './services/windows';
-
-const OverlayWindow = () => <div style={{width: '100%', height: '100%'}}></div>;
+import { kWindowNames } from './consts';
 
 // ==========================================
 // ROOT APP ROUTER
@@ -14,7 +13,7 @@ export default function App() {
   useEffect(() => {
     // If running in browser dev mode (not Overwolf)
     if (typeof window.overwolf === 'undefined') {
-        setCurrentWindowName(WINDOW_NAMES.DESKTOP); // Default to Desktop for dev
+        setCurrentWindowName(kWindowNames.desktop); // Default to Desktop for dev
         return;
     }
 
@@ -34,14 +33,15 @@ export default function App() {
 
   // Routing
   switch (currentWindowName) {
-      case WINDOW_NAMES.BACKGROUND:
+      case kWindowNames.background:
           return <BackgroundWindow />;
-      case WINDOW_NAMES.DESKTOP:
+      case kWindowNames.desktop:
           return <DesktopWindow />;
-      case WINDOW_NAMES.INGAME:
-          return <OverlayWindow />;
+      case kWindowNames.inGame:
+          // For now, overlay is just a placeholder or similar to desktop
+          // In the future, this would be the transparent overlay
+          return <DesktopWindow />; 
       default:
-          // Fallback, usually for development
           return <DesktopWindow />;
   }
 }

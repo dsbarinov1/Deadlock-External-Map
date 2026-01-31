@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { analyzeMapSnapshot, TacticalAlert } from '../services/geminiService';
 import MapCanvas from '../components/MapCanvas';
 import { PenIcon, TrashIcon, MonitorIcon, BrainIcon, VolumeIcon, VolumeXIcon, XIcon } from '../components/IconSymbols';
 import { CropRegion, DrawingPath, Marker, ToolType } from '../types';
-import { WindowService, WINDOW_NAMES } from '../services/windows';
+import { kWindowNames } from '../consts';
+import { OWWindow } from '../lib/overwolf';
 
 const INITIAL_CROP: CropRegion = { x: 0, y: 0, width: 300, height: 300 };
 
@@ -31,7 +33,11 @@ const DesktopWindow = () => {
   
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const setupVideoRef = useRef<HTMLVideoElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const [videoDim, setVideoDim] = useState({ w: 1920, h: 1080 });
+
+  // Window Instance
+  const windowInstance = useRef(new OWWindow(kWindowNames.desktop));
 
   // Interaction State
   const [interaction, setInteraction] = useState<{
@@ -43,13 +49,20 @@ const DesktopWindow = () => {
 
   useEffect(() => { localStorage.setItem('deadlock-map-crop', JSON.stringify(cropRegion)); }, [cropRegion]);
 
+  // Init Window Drag
+  useEffect(() => {
+      if (headerRef.current) {
+          windowInstance.current.dragMove(headerRef.current);
+      }
+  }, []);
+
   // Init - Try to auto-detect
   useEffect(() => {
     if (typeof window.overwolf === 'undefined') return;
 
     const autoConnect = async () => {
-        const gameInfo = await WindowService.getRunningGameInfo();
-        if (gameInfo && gameInfo.isRunning && Math.floor(gameInfo.id / 10) === 2420) { // Check prefix for Deadlock
+        const gameInfo = await new Promise<any>(r => overwolf.games.getRunningGameInfo(r));
+        if (gameInfo && gameInfo.isRunning && Math.floor(gameInfo.id / 10) === 2420) { 
              setStatusMessage("Deadlock Detected");
              detectAndCapture(gameInfo);
         } else {
@@ -163,11 +176,11 @@ const DesktopWindow = () => {
   }, [interaction, videoDim]);
 
   const Header = () => (
-    <div onMouseDown={() => WindowService.obtainWindow(WINDOW_NAMES.DESKTOP).then(w => overwolf.windows.dragMove(w.id))} className="h-8 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 shrink-0 select-none cursor-move">
+    <div ref={headerRef} className="h-8 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 shrink-0 select-none cursor-move">
         <div className="flex items-center gap-2 text-amber-500 font-bold tracking-wider text-xs">DEADLOCK COMPANION</div>
         <div className="flex items-center gap-1">
-             <button onClick={() => WindowService.minimize(WINDOW_NAMES.DESKTOP)} className="p-1 hover:bg-neutral-800 rounded text-neutral-400"><div className="w-3 h-0.5 bg-current translate-y-1"></div></button>
-             <button onClick={() => WindowService.close(WINDOW_NAMES.DESKTOP)} className="p-1 hover:bg-red-900/50 rounded text-neutral-400 hover:text-red-400"><XIcon size={14} /></button>
+             <button onMouseDown={e => e.stopPropagation()} onClick={() => windowInstance.current.minimize()} className="p-1 hover:bg-neutral-800 rounded text-neutral-400"><div className="w-3 h-0.5 bg-current translate-y-1"></div></button>
+             <button onMouseDown={e => e.stopPropagation()} onClick={() => windowInstance.current.close()} className="p-1 hover:bg-red-900/50 rounded text-neutral-400 hover:text-red-400"><XIcon size={14} /></button>
         </div>
     </div>
   );
@@ -243,7 +256,7 @@ const DesktopWindow = () => {
                 </div>
             </aside>
             <main className="flex-1 relative bg-black overflow-hidden flex flex-col">
-                <MapCanvas videoStream={stream} cropRegion={cropRegion} drawings={drawings} setDrawings={setDrawings} markers={markers} setMarkers={setMarkers} activeTool={activeTool} selectedColor={selectedColor} onCanvasRef={r => canvasRef.current=r} />
+                <MapCanvas videoStream={stream} cropRegion={cropRegion} drawings={drawings} setDrawings={setDrawings} markers={markers} setMarkers={setMarkers} activeTool={activeTool} selectedColor={selectedColor} onCanvasRef={(r: any) => canvasRef.current=r} />
                 {latestAlert && latestAlert.text && (
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-neutral-900/95 border border-purple-500/50 text-white px-4 py-3 rounded shadow-2xl backdrop-blur-md flex items-center gap-3 z-50">
                         <div className="text-purple-400"><BrainIcon/></div>
