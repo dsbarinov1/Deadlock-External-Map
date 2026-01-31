@@ -55,22 +55,34 @@ export default function App() {
 
   const startScreenCapture = async () => {
     try {
-      // Note: In Overwolf, standard getDisplayMedia works, but traditionally OW apps use 
-      // overwolf.streaming or overwolf.media APIs. For MVP, we stick to web standard.
+      // 1. Ask for screen share. 
+      // Note: On Overwolf/Electron this might default to "Entire Screen".
+      // If the user has 2 monitors, it creates a very wide video (e.g. 3840x1080).
       const mediaStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: false
       });
       setStream(mediaStream);
       
+      // 2. Get dimensions immediately to center the crop box
       const track = mediaStream.getVideoTracks()[0];
       const settings = track.getSettings();
-      if (settings.width && settings.height) {
-        setVideoDim({ w: settings.width, h: settings.height });
-      }
+      const w = settings.width || 1920;
+      const h = settings.height || 1080;
+      
+      setVideoDim({ w, h });
+      
+      // Reset crop to center of the screen initially for better visibility
+      setCropRegion({
+        x: (w / 2) - 150,
+        y: (h / 2) - 150,
+        width: 300,
+        height: 300
+      });
+
     } catch (err) {
       console.error("Error capturing screen:", err);
-      alert(`Could not capture screen. Please ensure permissions are granted. Error: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`Could not capture screen. Error: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -84,34 +96,23 @@ export default function App() {
 
   const speakAlert = (text: string) => {
     if (isMuted || !text) return;
-    // Cancel previous speech to prioritize new alert
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.1; // Slightly faster for urgent feel
+    utterance.rate = 1.1; 
     window.speechSynthesis.speak(utterance);
   };
 
   const handleAnalyze = async () => {
     if (!canvasRef.current || !hasApiKey) return;
     setIsAnalyzing(true);
-    
-    // Get image from canvas
     const dataUrl = canvasRef.current.toDataURL('image/png');
-    
     const result = await analyzeMapSnapshot(dataUrl);
     
     if (result) {
       setLatestAlert(result);
-      if (result.voice) {
-        speakAlert(result.voice);
-      }
-      
-      // Auto-hide visual alert after 5 seconds
-      setTimeout(() => {
-        setLatestAlert(null);
-      }, 5000);
+      if (result.voice) speakAlert(result.voice);
+      setTimeout(() => setLatestAlert(null), 5000);
     }
-    
     setIsAnalyzing(false);
   };
 
@@ -161,6 +162,7 @@ export default function App() {
       if (interaction.type === 'idle' || !setupVideoRef.current) return;
 
       const videoRect = setupVideoRef.current.getBoundingClientRect();
+      // Calculate scale between displayed video size and actual video resolution
       const scaleX = videoDim.w / videoRect.width;
       const scaleY = videoDim.h / videoRect.height;
 
@@ -172,20 +174,13 @@ export default function App() {
       if (interaction.type === 'moving') {
         newCrop.x += dx;
         newCrop.y += dy;
-        
-        // Clamp to bounds
         newCrop.x = Math.max(0, Math.min(newCrop.x, videoDim.w - newCrop.width));
         newCrop.y = Math.max(0, Math.min(newCrop.y, videoDim.h - newCrop.height));
       } 
       else if (interaction.type === 'resizing' && interaction.handle) {
         const minSize = 50;
-
-        if (interaction.handle.includes('e')) {
-          newCrop.width = Math.max(minSize, interaction.startCrop.width + dx);
-        }
-        if (interaction.handle.includes('s')) {
-          newCrop.height = Math.max(minSize, interaction.startCrop.height + dy);
-        }
+        if (interaction.handle.includes('e')) newCrop.width = Math.max(minSize, interaction.startCrop.width + dx);
+        if (interaction.handle.includes('s')) newCrop.height = Math.max(minSize, interaction.startCrop.height + dy);
         if (interaction.handle.includes('w')) {
           const proposedWidth = interaction.startCrop.width - dx;
           if (proposedWidth >= minSize) {
@@ -201,7 +196,6 @@ export default function App() {
           }
         }
       }
-
       setCropRegion(newCrop);
     };
 
@@ -220,78 +214,98 @@ export default function App() {
   }, [interaction, videoDim]);
 
 
-  // Setup View Render
+  // 1. Initial State: Waiting for user to start
   if (!stream) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-neutral-900 text-amber-500 font-mono relative">
-        <h1 className="text-4xl font-bold mb-4 tracking-widest uppercase text-amber-400 drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]">
-          Deadlock Map Companion
+      <div className="flex flex-col items-center justify-center h-full w-full bg-neutral-900 text-amber-500 font-mono relative p-8">
+        <h1 className="text-3xl md:text-5xl font-bold mb-6 tracking-widest uppercase text-amber-400 drop-shadow-[0_0_15px_rgba(245,158,11,0.5)] text-center">
+          Deadlock Companion
         </h1>
-        <p className="text-neutral-400 mb-8 max-w-md text-center">
-          Duplicate your minimap to a second screen. Draw tactical plans.
-        </p>
-        <div className="flex gap-4">
-          <button
-            onClick={startScreenCapture}
-            className="flex items-center gap-3 px-8 py-4 bg-amber-600 hover:bg-amber-500 text-black font-bold text-lg rounded shadow-lg transition-all transform hover:scale-105"
-          >
-            <MonitorIcon />
-            Select Game Screen
-          </button>
+        
+        <div className="bg-neutral-800/50 p-6 rounded-xl border border-neutral-700 max-w-lg w-full mb-8">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+            <span className="bg-amber-500 text-black w-6 h-6 rounded-full flex items-center justify-center text-sm">1</span>
+            Instructions
+          </h3>
+          <ul className="text-neutral-400 space-y-3 text-sm">
+            <li>1. Launch <strong>Deadlock</strong> and enter a match (or sandbox).</li>
+            <li>2. Click the button below.</li>
+            <li>3. Select the <strong>Screen</strong> or <strong>Window</strong> where the game is running.</li>
+            <li>4. Draw a box around the minimap.</li>
+          </ul>
         </div>
-        <p className="mt-8 text-neutral-600 text-xs">Running in Overwolf Mode</p>
+
+        <button
+          onClick={startScreenCapture}
+          className="group flex items-center gap-4 px-8 py-5 bg-amber-600 hover:bg-amber-500 text-black font-bold text-xl rounded shadow-lg transition-all transform hover:scale-105"
+        >
+          <MonitorIcon />
+          <span>Select Game Screen</span>
+        </button>
       </div>
     );
   }
 
-  // Setup Crop View
+  // 2. Setup Mode: Cropping the stream
   if (isSetupMode) {
     return (
-      <div className="flex flex-col h-full bg-neutral-900 text-neutral-100 select-none">
-        <header className="p-4 bg-neutral-950 border-b border-neutral-800 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-amber-500">Adjust Minimap Region</h2>
-          <div className="flex gap-4">
-            <p className="text-sm text-neutral-400 self-center">
-              Drag the box to position. Drag corners to resize.
-            </p>
-            <button
-              onClick={() => setIsSetupMode(false)}
-              className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded flex items-center gap-2"
-            >
-              <CheckIcon /> Confirm
-            </button>
+      <div className="flex flex-col h-full w-full bg-neutral-900 text-neutral-100 select-none overflow-hidden">
+        <header className="h-16 px-6 bg-neutral-950 border-b border-neutral-800 flex justify-between items-center shrink-0">
+          <div>
+            <h2 className="text-xl font-bold text-amber-500">Step 2: Locate Minimap</h2>
+            <p className="text-xs text-neutral-400">Drag box to cover minimap. Use corners to resize.</p>
           </div>
+          <button
+            onClick={() => setIsSetupMode(false)}
+            className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded flex items-center gap-2 transition-colors"
+          >
+            <CheckIcon /> Confirm Crop
+          </button>
         </header>
         
-        <div className="flex-1 overflow-hidden relative flex justify-center items-center p-4 bg-black/50">
-          <div className="relative border-2 border-neutral-700 shadow-2xl inline-block max-h-full max-w-full">
+        {/* Container for the video setup */}
+        <div className="flex-1 relative bg-black/80 flex items-center justify-center p-4 overflow-hidden">
+          
+          {/* 
+             We use inline-block relative container so the Overlay 
+             absolutely positions itself relative to the VIDEO IMAGE, not the screen.
+          */}
+          <div className="relative inline-block shadow-2xl border border-neutral-800">
             <video
               ref={setupVideoRef}
               autoPlay
               playsInline
               muted
-              className="max-h-[80vh] max-w-[90vw] block"
+              // Max dimensions ensure it fits within the setup window while maintaining aspect ratio
+              className="max-h-[calc(100vh-120px)] max-w-[calc(100vw-40px)] block object-contain"
               onLoadedMetadata={(e) => {
                 setVideoDim({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight });
               }}
             />
             
-            {/* Interactive Crop Box */}
+            {/* Interactive Crop Box Overlay */}
             <div
-              className="absolute border-2 border-amber-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] group cursor-move"
+              className="absolute border-2 border-amber-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] group cursor-move z-10"
               onMouseDown={handleMouseDownBox}
               style={{
+                // Position using percentages of the container (which matches video size)
                 left: `${(cropRegion.x / videoDim.w) * 100}%`,
                 top: `${(cropRegion.y / videoDim.h) * 100}%`,
                 width: `${(cropRegion.width / videoDim.w) * 100}%`,
                 height: `${(cropRegion.height / videoDim.h) * 100}%`
               }}
             >
-              <div className="absolute -top-6 left-0 bg-amber-500 text-black text-xs px-1 font-bold pointer-events-none">MINIMAP ZONE</div>
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-black cursor-nwse-resize z-10" onMouseDown={handleMouseDownHandle('nw')} />
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-black cursor-nesw-resize z-10" onMouseDown={handleMouseDownHandle('ne')} />
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-black cursor-nesw-resize z-10" onMouseDown={handleMouseDownHandle('sw')} />
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-black cursor-nwse-resize z-10" onMouseDown={handleMouseDownHandle('se')} />
+              <div className="absolute -top-7 left-0 bg-amber-500 text-black text-xs px-2 py-0.5 font-bold pointer-events-none whitespace-nowrap rounded-t">
+                MINIMAP
+              </div>
+              
+              {/* Resize Handles */}
+              <div className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-white border border-black cursor-nwse-resize z-20" onMouseDown={handleMouseDownHandle('nw')} />
+              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white border border-black cursor-nesw-resize z-20" onMouseDown={handleMouseDownHandle('ne')} />
+              <div className="absolute -bottom-1.5 -left-1.5 w-4 h-4 bg-white border border-black cursor-nesw-resize z-20" onMouseDown={handleMouseDownHandle('sw')} />
+              <div className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-white border border-black cursor-nwse-resize z-20" onMouseDown={handleMouseDownHandle('se')} />
+              
+              {/* Crosshair guidelines */}
               <div className="absolute top-1/2 left-0 w-full h-px bg-amber-500/30 pointer-events-none" />
               <div className="absolute left-1/2 top-0 h-full w-px bg-amber-500/30 pointer-events-none" />
             </div>
@@ -301,20 +315,20 @@ export default function App() {
     );
   }
 
-  // Main Companion View
+  // 3. Main Companion View
   return (
-    <div className="flex h-full bg-neutral-950 font-sans">
+    <div className="flex h-full w-full bg-neutral-950 font-sans overflow-hidden">
       {/* Sidebar Controls */}
-      <aside className="w-20 bg-neutral-900 border-r border-neutral-800 flex flex-col items-center py-6 gap-6 z-10">
+      <aside className="w-16 md:w-20 bg-neutral-900 border-r border-neutral-800 flex flex-col items-center py-4 gap-4 z-10 shrink-0">
         
         <div className="flex flex-col gap-3 w-full px-2">
            {/* Color Picker */}
-           <div className="flex flex-wrap gap-2 justify-center mb-4">
+           <div className="flex flex-wrap gap-1 justify-center mb-2">
             {['#ef4444', '#22c55e', '#eab308', '#3b82f6', '#ffffff'].map(c => (
               <button
                 key={c}
                 onClick={() => setSelectedColor(c)}
-                className={`w-6 h-6 rounded-full border-2 ${selectedColor === c ? 'border-white scale-110' : 'border-transparent'}`}
+                className={`w-5 h-5 rounded-full border-2 ${selectedColor === c ? 'border-white scale-110' : 'border-transparent'}`}
                 style={{ backgroundColor: c }}
               />
             ))}
@@ -341,7 +355,7 @@ export default function App() {
           />
         </div>
 
-        <div className="mt-auto flex flex-col gap-4 w-full px-2">
+        <div className="mt-auto flex flex-col gap-3 w-full px-2">
            {hasApiKey && (
              <>
                <button
@@ -366,17 +380,19 @@ export default function App() {
                 ) : (
                   <BrainIcon />
                 )}
-                <span className="text-[10px] mt-1 uppercase font-bold">Scan</span>
+                <span className="text-[9px] mt-1 uppercase font-bold">Scan</span>
               </button>
              </>
            )}
+
+          <div className="h-px bg-neutral-700 w-full my-1"></div>
 
           <button
             onClick={() => setIsSetupMode(true)}
             className="flex flex-col items-center p-2 text-neutral-500 hover:text-neutral-300 transition-colors"
           >
             <div className="scale-75"><MonitorIcon /></div>
-            <span className="text-[10px] mt-1">Adjust</span>
+            <span className="text-[9px] mt-1">Adjust</span>
           </button>
           
            <button
@@ -389,7 +405,7 @@ export default function App() {
       </aside>
 
       {/* Main Canvas Area */}
-      <main className="flex-1 relative bg-black overflow-hidden">
+      <main className="flex-1 relative bg-black overflow-hidden flex flex-col">
         <MapCanvas
           videoStream={stream}
           cropRegion={cropRegion}
@@ -404,11 +420,11 @@ export default function App() {
 
         {/* AI Tactical Toast (Minimal) */}
         {latestAlert && latestAlert.text && (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-neutral-900/90 border-l-4 border-purple-500 text-white px-6 py-3 rounded shadow-2xl backdrop-blur-md flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
-             <BrainIcon />
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-neutral-900/95 border-l-4 border-purple-500 text-white px-6 py-4 rounded shadow-2xl backdrop-blur-md flex items-center gap-4 z-50">
+             <div className="text-purple-400"><BrainIcon /></div>
              <div>
-               <p className="font-bold text-lg tracking-wide uppercase text-purple-200">Tactical Alert</p>
-               <p className="text-neutral-200">{latestAlert.text}</p>
+               <p className="font-bold text-xs tracking-wide uppercase text-purple-300 mb-1">AI Tactical Alert</p>
+               <p className="text-lg font-medium text-white leading-tight">{latestAlert.text}</p>
              </div>
           </div>
         )}
@@ -422,13 +438,13 @@ const ToolButton = ({ active, onClick, icon, label, variant = 'default' }: any) 
   <button
     onClick={onClick}
     className={`
-      flex flex-col items-center justify-center p-3 rounded-xl transition-all w-full
+      flex flex-col items-center justify-center p-2.5 rounded-xl transition-all w-full
       ${active ? 'bg-amber-600 text-white shadow-lg scale-105' : ''}
       ${!active && variant === 'default' ? 'text-neutral-400 hover:bg-neutral-800 hover:text-white' : ''}
       ${!active && variant === 'danger' ? 'text-red-400 hover:bg-red-900/30 hover:text-red-200' : ''}
     `}
   >
-    <div className="mb-1">{icon}</div>
-    <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+    <div className="mb-0.5 scale-90">{icon}</div>
+    <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
   </button>
 );
