@@ -20,9 +20,7 @@ export default function App() {
   });
 
   const [isSetupMode, setIsSetupMode] = useState(true);
-  const [statusMessage, setStatusMessage] = useState("Waiting for Deadlock...");
-  const [isGameRunning, setIsGameRunning] = useState(false);
-  const [foundGameInfo, setFoundGameInfo] = useState<any>(null);
+  const [statusMessage, setStatusMessage] = useState("Initializing...");
   
   // Tools state
   const [drawings, setDrawings] = useState<DrawingPath[]>([]);
@@ -58,16 +56,45 @@ export default function App() {
     localStorage.setItem('deadlock-map-crop', JSON.stringify(cropRegion));
   }, [cropRegion]);
 
-  // --- WINDOW MANAGEMENT ---
+  // --- 1. WINDOW MANAGEMENT & SECOND MONITOR LOGIC ---
   useEffect(() => {
     if (typeof window.overwolf !== 'undefined') {
       window.overwolf.windows.getCurrentWindow((result: any) => {
         if (result.status === 'success') {
-          setCurrentWindow(result.window);
+          const win = result.window;
+          setCurrentWindow(win);
+          
+          // Move to second monitor automatically
+          moveToSecondMonitor(win.id);
         }
       });
     }
   }, []);
+
+  const moveToSecondMonitor = (windowId: string) => {
+    window.overwolf.utils.getMonitorsList((res: any) => {
+      // Logic: Find a monitor that is NOT the primary one.
+      if (res.monitors && res.monitors.length > 0) {
+        const monitors = res.monitors;
+        // Try to find secondary, otherwise fallback to index 1, otherwise stay on primary
+        const targetMonitor = monitors.find((m: any) => !m.isPrimary) || (monitors.length > 1 ? monitors[1] : null);
+
+        if (targetMonitor) {
+          console.log("Found secondary monitor:", targetMonitor);
+          // Center the window on that monitor
+          // Assuming window size 1200x800 from manifest
+          const winWidth = 1200;
+          const winHeight = 800;
+          const x = targetMonitor.x + (targetMonitor.width / 2) - (winWidth / 2);
+          const y = targetMonitor.y + (targetMonitor.height / 2) - (winHeight / 2);
+          
+          window.overwolf.windows.changePosition(windowId, Math.floor(x), Math.floor(y));
+        } else {
+          console.log("No secondary monitor found, staying on primary.");
+        }
+      }
+    });
+  };
 
   const dragMove = () => {
     if (currentWindow) {
@@ -87,28 +114,31 @@ export default function App() {
     }
   }
 
-  // --- GAME DETECTION ---
+  // --- 2. GAME DETECTION & AUTO CAPTURE ---
   useEffect(() => {
     if (typeof window.overwolf === 'undefined') {
-      setStatusMessage("Not running in Overwolf. Manual selection required.");
+      setStatusMessage("Not running in Overwolf.");
       return;
     }
 
     const onGameInfoUpdated = (event: any) => {
       if (event && event.gameInfo && event.gameInfo.isRunning) {
-        detectAndCapture(event.gameInfo);
+        // Debounce slightly to ensure window handle is ready
+        setTimeout(() => detectAndCapture(event.gameInfo), 1000);
       } else if (event && event.runningChanged === false) {
         setStream(null);
-        setIsGameRunning(false);
-        setFoundGameInfo(null);
         setStatusMessage("Game closed. Waiting...");
       }
     };
 
     window.overwolf.games.onGameInfoUpdated.addListener(onGameInfoUpdated);
+    
+    // Check initially
     window.overwolf.games.getRunningGameInfo((res: any) => {
       if (res && res.isRunning) {
         detectAndCapture(res);
+      } else {
+        setStatusMessage("Waiting for Deadlock...");
       }
     });
 
@@ -117,80 +147,82 @@ export default function App() {
     };
   }, []);
 
-  const detectAndCapture = (gameInfo: any) => {
-    if (!gameInfo || !gameInfo.isRunning || !gameInfo.width) return;
-    setIsGameRunning(true);
-    setFoundGameInfo(gameInfo);
-    setStatusMessage(`Ready: ${gameInfo.title || "Game"}`);
-  };
-
-  const handleConnectClick = async () => {
-    if (foundGameInfo) {
-      // First try the specific window hook
-      const success = await captureGameWindow(foundGameInfo.windowHandle, foundGameInfo.width, foundGameInfo.height);
-      
-      // If that failed (Permission Denied), try the manual picker as a fallback
-      if (!success) {
-        console.log("Automatic hook failed, trying manual picker...");
-        setStatusMessage("Auto-hook blocked. Please select game window manually.");
-        await manualCapture();
-      }
+  const detectAndCapture = async (gameInfo: any) => {
+    // Basic validation
+    if (!gameInfo || !gameInfo.isRunning || !gameInfo.windowHandle) {
+        setStatusMessage("Game detected, but window handle missing.");
+        return;
     }
-  };
 
-  const captureGameWindow = async (windowHandle: any, width: number, height: number): Promise<boolean> => {
-    if (!windowHandle) return false;
+    setStatusMessage(`Syncing with ${gameInfo.title}...`);
 
     try {
-      setStatusMessage(`Attempting hook: ${windowHandle}...`);
-
+      // AUTO-CAPTURE: No buttons.
       const constraints = {
         audio: false,
         video: {
           mandatory: {
             chromeMediaSource: 'desktop',
-            chromeMediaSourceId: `window:${windowHandle}`
+            chromeMediaSourceId: `window:${gameInfo.windowHandle}`
           }
         }
       } as any;
 
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      setStream(mediaStream);
-      setVideoDim({ w: width, h: height });
       
+      // If we got here, we have the stream!
+      setStream(mediaStream);
+      setVideoDim({ w: gameInfo.width || 1920, h: gameInfo.height || 1080 });
+      
+      // Set initial center crop
       setCropRegion({
-        x: (width / 2) - 150,
-        y: (height / 2) - 150,
+        x: (gameInfo.width / 2) - 150,
+        y: (gameInfo.height / 2) - 150,
         width: 300,
         height: 300
       });
 
-      setStatusMessage("Stream Active");
-      return true;
+      // Go directly to setup mode
+      setIsSetupMode(true); 
+      setStatusMessage("Active");
 
     } catch (err) {
-      console.warn("Direct capture failed:", err);
-      // Return false to trigger fallback
-      return false;
+      console.error("Auto-capture failed:", err);
+      // Fallback: If auto-fail, we just show the manual button as a last resort in the UI
+      setStatusMessage("Auto-sync failed. Retrying...");
+      
+      // Simple retry once after 2 seconds
+      setTimeout(async () => {
+          try {
+             // Retry exact same logic
+             const retryStream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: {
+                    mandatory: {
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: `window:${gameInfo.windowHandle}`
+                    }
+                }
+             } as any);
+             setStream(retryStream);
+             setVideoDim({ w: gameInfo.width || 1920, h: gameInfo.height || 1080 });
+          } catch (retryErr) {
+             setStatusMessage("Sync blocked. Please select manually.");
+             // Only if retry fails do we give up on auto
+          }
+      }, 2000);
     }
   };
   
   const manualCapture = async () => {
     try {
-        // This triggers the standard "Select a Window" picker
         const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         setStream(mediaStream);
-        
-        // Try to get dimensions from the track settings
         const track = mediaStream.getVideoTracks()[0];
         const settings = track.getSettings();
-        const w = settings.width || 1920;
-        const h = settings.height || 1080;
-        setVideoDim({ w, h });
-        setStatusMessage("Manual Stream Active");
+        setVideoDim({ w: settings.width || 1920, h: settings.height || 1080 });
     } catch(e) {
-        console.error("Manual capture cancelled or failed", e);
-        setStatusMessage("Capture cancelled.");
+        console.error(e);
     }
   }
 
@@ -249,7 +281,6 @@ export default function App() {
         newCrop.x = Math.max(0, Math.min(newCrop.x + dx, videoDim.w - newCrop.width));
         newCrop.y = Math.max(0, Math.min(newCrop.y + dy, videoDim.h - newCrop.height));
       } else if (interaction.type === 'resizing' && interaction.handle) {
-         // Resizing logic (same as before)
          const minSize = 50;
          if (interaction.handle.includes('e')) newCrop.width = Math.max(minSize, interaction.startCrop.width + dx);
          if (interaction.handle.includes('s')) newCrop.height = Math.max(minSize, interaction.startCrop.height + dy);
@@ -294,50 +325,33 @@ export default function App() {
     </div>
   );
 
-  // 1. Initial State
+  // 1. Initial State (Waiting / Loading)
   if (!stream) {
     return (
       <div className="flex flex-col h-full w-full bg-neutral-950 border border-neutral-800">
         <WindowHeader />
         <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
-             {/* Animated Background */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-neutral-900 to-black z-0 opacity-50"></div>
             
             <div className="z-10 flex flex-col items-center max-w-lg text-center">
                 <div className="relative mb-6">
-                    {foundGameInfo ? (
-                    <div className="w-20 h-20 rounded-full bg-green-500/20 border-2 border-green-500 flex items-center justify-center animate-pulse shadow-[0_0_30px_rgba(34,197,94,0.3)]">
-                        <CheckIcon />
-                    </div>
-                    ) : (
                     <div className="w-16 h-16 border-4 border-amber-600/30 border-t-amber-500 rounded-full animate-spin" />
-                    )}
                 </div>
 
                 <h2 className="text-2xl text-white font-bold mb-2 tracking-tight">
-                {foundGameInfo ? "READY TO LINK" : "SCANNING FOR GAME..."}
+                   SEARCHING FOR GAME...
                 </h2>
                 <p className="text-neutral-500 font-mono text-xs mb-8 uppercase tracking-widest">{statusMessage}</p>
-
-                {foundGameInfo ? (
-                <button 
-                    onClick={handleConnectClick}
-                    className="px-8 py-3 bg-green-600 hover:bg-green-500 text-white font-bold text-sm uppercase tracking-widest rounded shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all transform hover:scale-105"
-                >
-                    Link to Deadlock
-                </button>
-                ) : (
-                 <div className="text-neutral-600 text-xs max-w-xs">
-                    Launch Deadlock. The app will automatically detect the window.
-                 </div>
-                )}
                 
-                <button 
-                    onClick={manualCapture}
-                    className="mt-12 text-neutral-700 hover:text-neutral-500 text-[10px] uppercase tracking-widest border-b border-transparent hover:border-neutral-500 transition-colors"
-                >
-                    Or Select Screen Manually
-                </button>
+                {/* Fallback button only appears if auto-magic fails drastically */}
+                {statusMessage.includes("blocked") && (
+                    <button 
+                        onClick={manualCapture}
+                        className="px-6 py-2 border border-neutral-700 hover:bg-neutral-800 text-neutral-300 text-xs uppercase tracking-widest rounded transition-colors"
+                    >
+                        Select Screen Manually
+                    </button>
+                )}
             </div>
         </div>
       </div>
@@ -352,8 +366,8 @@ export default function App() {
         <header className="h-12 px-4 bg-neutral-950/80 backdrop-blur border-b border-neutral-800 flex justify-between items-center shrink-0 z-20">
           <div className="text-sm font-medium text-amber-500">Adjust Map Zone</div>
           <div className="flex gap-2">
-             <button onClick={() => { setStream(null); setIsGameRunning(false); setFoundGameInfo(null); }} className="px-3 py-1 text-neutral-500 hover:text-white text-xs">Reset</button>
-             <button onClick={() => setIsSetupMode(false)} className="px-4 py-1.5 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-500 transition-colors">Confirm</button>
+             <button onClick={() => { setStream(null); setStatusMessage("Resetting..."); }} className="px-3 py-1 text-neutral-500 hover:text-white text-xs">Reset</button>
+             <button onClick={() => setIsSetupMode(false)} className="px-4 py-1.5 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-500 transition-colors">Confirm Crop</button>
           </div>
         </header>
         
