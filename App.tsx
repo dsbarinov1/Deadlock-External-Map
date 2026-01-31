@@ -14,6 +14,11 @@ const INITIAL_CROP: CropRegion = { x: 0, y: 0, width: 300, height: 300 };
 // ==========================================
 const BackgroundController = () => {
   useEffect(() => {
+    if (typeof window.overwolf === 'undefined') {
+      console.warn("BackgroundController: Overwolf object not found.");
+      return;
+    }
+
     console.log("[Background] Controller Started");
 
     const registerEvents = () => {
@@ -109,6 +114,13 @@ const MainWindow = () => {
 
   // Window Management
   useEffect(() => {
+    if (typeof window.overwolf === 'undefined') {
+        // Not in Overwolf (Browser Dev Mode)
+        setStatusMessage("Browser Dev Mode");
+        setShowManualButton(true);
+        return;
+    }
+
     window.overwolf.windows.getCurrentWindow((result: any) => {
       if (result.status === 'success') {
         setCurrentWindow(result.window);
@@ -119,6 +131,8 @@ const MainWindow = () => {
 
     // Auto-connect loop
     const connect = () => {
+        if (typeof window.overwolf === 'undefined') return;
+
         window.overwolf.games.getRunningGameInfo((res: any) => {
             if (res && res.isRunning && Math.floor(res.id / 10) === 2420) {
                 detectAndCapture(res);
@@ -134,6 +148,8 @@ const MainWindow = () => {
   }, []);
 
   const moveToSecondMonitor = (windowId: string) => {
+    if (typeof window.overwolf === 'undefined') return;
+
     window.overwolf.utils.getMonitorsList((res: any) => {
       if (res.monitors && res.monitors.length > 1) {
         const targetMonitor = res.monitors.find((m: any) => !m.isPrimary) || res.monitors[1];
@@ -151,6 +167,11 @@ const MainWindow = () => {
   const detectAndCapture = async (gameInfo: any) => {
     setStatusMessage("Game Found. Syncing...");
     
+    if (typeof window.overwolf === 'undefined') {
+        setShowManualButton(true);
+        return;
+    }
+
     // STRATEGY: Monitor Capture (Most Reliable)
     window.overwolf.utils.getMonitorsList(async (res: any) => {
         if (!res.monitors || res.monitors.length === 0) {
@@ -267,9 +288,9 @@ const MainWindow = () => {
 
 
   // Window Controls
-  const dragMove = () => currentWindow && window.overwolf.windows.dragMove(currentWindow.id);
-  const minWin = () => currentWindow && window.overwolf.windows.minimize(currentWindow.id);
-  const closeWin = () => currentWindow && window.overwolf.windows.close(currentWindow.id);
+  const dragMove = () => currentWindow && window.overwolf?.windows.dragMove(currentWindow.id);
+  const minWin = () => currentWindow && window.overwolf?.windows.minimize(currentWindow.id);
+  const closeWin = () => currentWindow && window.overwolf?.windows.close(currentWindow.id);
 
   // --- RENDER ---
   const Header = () => (
