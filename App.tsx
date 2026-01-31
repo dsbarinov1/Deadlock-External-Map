@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { analyzeMapSnapshot, TacticalAlert } from './services/geminiService';
 import MapCanvas from './components/MapCanvas';
-import { PenIcon, TrashIcon, MonitorIcon, BrainIcon, CheckIcon, XIcon, VolumeIcon, VolumeXIcon } from './components/IconSymbols';
+import { PenIcon, TrashIcon, MonitorIcon, BrainIcon, CheckIcon, VolumeIcon, VolumeXIcon } from './components/IconSymbols';
 import { CropRegion, DrawingPath, Marker, ToolType } from './types';
 
 const INITIAL_CROP: CropRegion = { x: 0, y: 0, width: 300, height: 300 };
@@ -22,6 +22,7 @@ export default function App() {
   const [isSetupMode, setIsSetupMode] = useState(true);
   const [statusMessage, setStatusMessage] = useState("Waiting for Deadlock...");
   const [isGameRunning, setIsGameRunning] = useState(false);
+  const [foundGameInfo, setFoundGameInfo] = useState<any>(null);
   
   // Tools state
   const [drawings, setDrawings] = useState<DrawingPath[]>([]);
@@ -68,6 +69,7 @@ export default function App() {
       } else if (event && event.runningChanged === false) {
         setStream(null);
         setIsGameRunning(false);
+        setFoundGameInfo(null);
         setStatusMessage("Game closed. Waiting...");
       }
     };
@@ -93,12 +95,16 @@ export default function App() {
     if (!gameInfo || !gameInfo.isRunning || !gameInfo.width) return;
 
     setIsGameRunning(true);
-    setStatusMessage(`Found: ${gameInfo.title || "Game"}`);
-    
-    // If we already have a stream, don't re-capture unless necessary
-    if (stream) return;
+    // Store the info, but DO NOT start capture yet. 
+    // We need a user interaction (click) to trigger getUserMedia to avoid "Permission denied".
+    setFoundGameInfo(gameInfo);
+    setStatusMessage(`Ready to connect: ${gameInfo.title || "Game"}`);
+  };
 
-    captureGameWindow(gameInfo.windowHandle, gameInfo.width, gameInfo.height);
+  const handleConnectClick = () => {
+    if (foundGameInfo) {
+      captureGameWindow(foundGameInfo.windowHandle, foundGameInfo.width, foundGameInfo.height);
+    }
   };
 
   const captureGameWindow = async (windowHandle: any, width: number, height: number) => {
@@ -118,10 +124,11 @@ export default function App() {
           mandatory: {
             chromeMediaSource: 'desktop',
             chromeMediaSourceId: `window:${windowHandle}`,
-            minWidth: width,
-            maxWidth: width,
-            minHeight: height,
-            maxHeight: height
+            // Removing strict constraints to avoid "ConstraintNotSatisfiedError" if game resizes slightly
+            // minWidth: width,
+            // maxWidth: width,
+            // minHeight: height,
+            // maxHeight: height
           }
         }
       } as any;
@@ -288,23 +295,44 @@ export default function App() {
             </p>
             
             <div className="relative mb-8">
-                <div className="w-20 h-20 border-4 border-amber-600 rounded-full border-t-transparent animate-spin"></div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <MonitorIcon />
-                </div>
+                {foundGameInfo ? (
+                   <div className="w-24 h-24 rounded-full bg-green-500 flex items-center justify-center animate-bounce shadow-[0_0_25px_rgba(34,197,94,0.6)]">
+                      <CheckIcon />
+                   </div>
+                ) : (
+                  <>
+                    <div className="w-20 h-20 border-4 border-amber-600 rounded-full border-t-transparent animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <MonitorIcon />
+                    </div>
+                  </>
+                )}
             </div>
 
-            <h2 className="text-2xl text-white font-bold mb-2 animate-pulse">{isGameRunning ? "Connecting..." : "Waiting for Game..."}</h2>
+            <h2 className="text-2xl text-white font-bold mb-2">
+              {foundGameInfo ? "GAME DETECTED" : (isGameRunning ? "Connecting..." : "Waiting for Game...")}
+            </h2>
             <p className="text-neutral-400 font-mono text-sm mb-6">{statusMessage}</p>
 
-            <div className="bg-neutral-800/80 p-4 rounded border border-neutral-700 text-left text-xs text-neutral-400 w-full">
-                <p><strong>Instructions:</strong></p>
-                <ul className="list-disc pl-4 mt-2 space-y-1">
-                    <li>Launch <strong>Deadlock</strong> via Steam.</li>
-                    <li>Wait for the match/sandbox to load.</li>
-                    <li>This app will automatically hook into the game window.</li>
-                </ul>
-            </div>
+            {foundGameInfo && (
+              <button 
+                onClick={handleConnectClick}
+                className="mb-8 px-8 py-4 bg-green-600 hover:bg-green-500 text-white font-bold text-xl rounded-lg shadow-xl transition-all transform hover:scale-105 animate-pulse"
+              >
+                CONNECT TO DEADLOCK
+              </button>
+            )}
+
+            {!foundGameInfo && (
+              <div className="bg-neutral-800/80 p-4 rounded border border-neutral-700 text-left text-xs text-neutral-400 w-full">
+                  <p><strong>Instructions:</strong></p>
+                  <ul className="list-disc pl-4 mt-2 space-y-1">
+                      <li>Launch <strong>Deadlock</strong> via Steam.</li>
+                      <li>Wait for the match/sandbox to load.</li>
+                      <li>This app will automatically detect the game window.</li>
+                  </ul>
+              </div>
+            )}
 
             {/* Manual fallback just in case */}
             <button 
@@ -329,7 +357,7 @@ export default function App() {
           </div>
           <div className="flex gap-4">
              <button
-                onClick={() => { setStream(null); setIsGameRunning(false); }}
+                onClick={() => { setStream(null); setIsGameRunning(false); setFoundGameInfo(null); }}
                 className="px-4 py-2 text-neutral-400 hover:text-white text-sm"
               >
                 Reset
