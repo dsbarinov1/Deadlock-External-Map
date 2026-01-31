@@ -1,10 +1,11 @@
+
 {
   "manifest_version": 1,
   "type": "WebApp",
   "meta": {
     "name": "Deadlock Map Companion",
     "author": "Developer",
-    "version": "1.1.6",
+    "version": "1.1.7",
     "minimum-overwolf-version": "0.219.0",
     "description": "Tactical map analysis for Deadlock",
     "icon": "icon.png",
@@ -58,7 +59,7 @@
           "height": 400
         }
       },
-      "ingame": {
+      "in_game": {
         "file": "index.html",
         "in_game_only": true,
         "desktop_only": false,
@@ -68,8 +69,8 @@
         "click_through": true,
         "focus_game_takeover": "ReleaseOnHidden",
         "size": {
-          "width": 1,
-          "height": 1
+          "width": 1200,
+          "height": 800
         }
       }
     }
