@@ -28,3 +28,10 @@ export interface Marker {
   y: number;
   type: 'danger' | 'move' | 'ward';
 }
+
+// Add Overwolf global types for TS
+declare global {
+  interface Window {
+    overwolf: any;
+  }
+}

@@ -20,6 +20,8 @@ export default function App() {
   });
 
   const [isSetupMode, setIsSetupMode] = useState(true);
+  const [statusMessage, setStatusMessage] = useState("Waiting for Deadlock...");
+  const [isGameRunning, setIsGameRunning] = useState(false);
   
   // Tools state
   const [drawings, setDrawings] = useState<DrawingPath[]>([]);
@@ -53,46 +55,113 @@ export default function App() {
     localStorage.setItem('deadlock-map-crop', JSON.stringify(cropRegion));
   }, [cropRegion]);
 
-  const startScreenCapture = async () => {
+  // --- OVERWOLF GAME DETECTION LOGIC ---
+  useEffect(() => {
+    if (typeof window.overwolf === 'undefined') {
+      setStatusMessage("Not running in Overwolf. Manual selection required.");
+      return;
+    }
+
+    const onGameInfoUpdated = (event: any) => {
+      if (event && event.gameInfo && event.gameInfo.isRunning) {
+        detectAndCapture(event.gameInfo);
+      } else if (event && event.runningChanged === false) {
+        setStream(null);
+        setIsGameRunning(false);
+        setStatusMessage("Game closed. Waiting...");
+      }
+    };
+
+    // Listen for game launch
+    window.overwolf.games.onGameInfoUpdated.addListener(onGameInfoUpdated);
+
+    // Check if already running
+    window.overwolf.games.getRunningGameInfo((res: any) => {
+      if (res && res.isRunning) {
+        detectAndCapture(res);
+      }
+    });
+
+    return () => {
+      window.overwolf.games.onGameInfoUpdated.removeListener(onGameInfoUpdated);
+    };
+  }, []);
+
+  const detectAndCapture = (gameInfo: any) => {
+    // 228480 is Deadlock steam ID usually, but we accept any game for now to be safe
+    // If the game is running, we get the window handle
+    if (!gameInfo || !gameInfo.isRunning || !gameInfo.width) return;
+
+    setIsGameRunning(true);
+    setStatusMessage(`Found: ${gameInfo.title || "Game"}`);
+    
+    // If we already have a stream, don't re-capture unless necessary
+    if (stream) return;
+
+    captureGameWindow(gameInfo.windowHandle, gameInfo.width, gameInfo.height);
+  };
+
+  const captureGameWindow = async (windowHandle: any, width: number, height: number) => {
+    if (!windowHandle) {
+      setStatusMessage("Game found, but Window Handle is missing.");
+      return;
+    }
+
     try {
-      // 1. Ask for screen share. 
-      // Note: On Overwolf/Electron this might default to "Entire Screen".
-      // If the user has 2 monitors, it creates a very wide video (e.g. 3840x1080).
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: false
-      });
+      setStatusMessage(`Hooking into window: ${windowHandle}...`);
+
+      // Overwolf/Electron specific API to target a specific window handle
+      // This prevents "stitching" of multiple screens
+      const constraints = {
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: `window:${windowHandle}`,
+            minWidth: width,
+            maxWidth: width,
+            minHeight: height,
+            maxHeight: height
+          }
+        }
+      } as any;
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
       setStream(mediaStream);
+      setVideoDim({ w: width, h: height });
       
-      // 2. Get dimensions immediately to center the crop box
-      const track = mediaStream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      const w = settings.width || 1920;
-      const h = settings.height || 1080;
-      
-      setVideoDim({ w, h });
-      
-      // Reset crop to center of the screen initially for better visibility
+      // Center crop box initially
       setCropRegion({
-        x: (w / 2) - 150,
-        y: (h / 2) - 150,
+        x: (width / 2) - 150,
+        y: (height / 2) - 150,
         width: 300,
         height: 300
       });
 
-    } catch (err) {
-      console.error("Error capturing screen:", err);
-      alert(`Could not capture screen. Error: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
+      setStatusMessage("Stream Active");
 
-  const handleStopCapture = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-      setIsSetupMode(true);
+    } catch (err) {
+      console.error("Capture failed:", err);
+      setStatusMessage(`Capture Error: ${err}`);
     }
   };
+  
+  // Fallback for manual button (dev mode or if detection fails)
+  const manualCapture = async () => {
+    try {
+        const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        setStream(mediaStream);
+        const track = mediaStream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        const w = settings.width || 1920;
+        const h = settings.height || 1080;
+        setVideoDim({ w, h });
+    } catch(e) {
+        console.error(e);
+    }
+  }
+
 
   const speakAlert = (text: string) => {
     if (isMuted || !text) return;
@@ -115,16 +184,6 @@ export default function App() {
     }
     setIsAnalyzing(false);
   };
-
-  // If stream ends externally
-  useEffect(() => {
-    if (stream) {
-      stream.getVideoTracks()[0].onended = () => {
-        setStream(null);
-        setIsSetupMode(true);
-      };
-    }
-  }, [stream]);
 
   // Sync stream to setup video element
   useEffect(() => {
@@ -162,7 +221,6 @@ export default function App() {
       if (interaction.type === 'idle' || !setupVideoRef.current) return;
 
       const videoRect = setupVideoRef.current.getBoundingClientRect();
-      // Calculate scale between displayed video size and actual video resolution
       const scaleX = videoDim.w / videoRect.width;
       const scaleY = videoDim.h / videoRect.height;
 
@@ -214,34 +272,48 @@ export default function App() {
   }, [interaction, videoDim]);
 
 
-  // 1. Initial State: Waiting for user to start
+  // 1. Initial State: Waiting for Game
   if (!stream) {
     return (
       <div className="flex flex-col items-center justify-center h-full w-full bg-neutral-900 text-amber-500 font-mono relative p-8">
-        <h1 className="text-3xl md:text-5xl font-bold mb-6 tracking-widest uppercase text-amber-400 drop-shadow-[0_0_15px_rgba(245,158,11,0.5)] text-center">
-          Deadlock Companion
-        </h1>
+        {/* Animated Background */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-neutral-800 to-black z-0 opacity-50"></div>
         
-        <div className="bg-neutral-800/50 p-6 rounded-xl border border-neutral-700 max-w-lg w-full mb-8">
-          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-            <span className="bg-amber-500 text-black w-6 h-6 rounded-full flex items-center justify-center text-sm">1</span>
-            Instructions
-          </h3>
-          <ul className="text-neutral-400 space-y-3 text-sm">
-            <li>1. Launch <strong>Deadlock</strong> and enter a match (or sandbox).</li>
-            <li>2. Click the button below.</li>
-            <li>3. Select the <strong>Screen</strong> or <strong>Window</strong> where the game is running.</li>
-            <li>4. Draw a box around the minimap.</li>
-          </ul>
-        </div>
+        <div className="z-10 flex flex-col items-center max-w-lg text-center">
+            <h1 className="text-4xl md:text-5xl font-bold mb-2 tracking-widest uppercase text-amber-400 drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]">
+            Deadlock Companion
+            </h1>
+            <p className="text-neutral-500 mb-10 text-sm uppercase tracking-widest border-b border-neutral-800 pb-2">
+            Tactical Map Mirror
+            </p>
+            
+            <div className="relative mb-8">
+                <div className="w-20 h-20 border-4 border-amber-600 rounded-full border-t-transparent animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <MonitorIcon />
+                </div>
+            </div>
 
-        <button
-          onClick={startScreenCapture}
-          className="group flex items-center gap-4 px-8 py-5 bg-amber-600 hover:bg-amber-500 text-black font-bold text-xl rounded shadow-lg transition-all transform hover:scale-105"
-        >
-          <MonitorIcon />
-          <span>Select Game Screen</span>
-        </button>
+            <h2 className="text-2xl text-white font-bold mb-2 animate-pulse">{isGameRunning ? "Connecting..." : "Waiting for Game..."}</h2>
+            <p className="text-neutral-400 font-mono text-sm mb-6">{statusMessage}</p>
+
+            <div className="bg-neutral-800/80 p-4 rounded border border-neutral-700 text-left text-xs text-neutral-400 w-full">
+                <p><strong>Instructions:</strong></p>
+                <ul className="list-disc pl-4 mt-2 space-y-1">
+                    <li>Launch <strong>Deadlock</strong> via Steam.</li>
+                    <li>Wait for the match/sandbox to load.</li>
+                    <li>This app will automatically hook into the game window.</li>
+                </ul>
+            </div>
+
+            {/* Manual fallback just in case */}
+            <button 
+                onClick={manualCapture}
+                className="mt-8 text-neutral-600 hover:text-neutral-400 text-xs underline"
+            >
+                Detection stuck? Click to select screen manually.
+            </button>
+        </div>
       </div>
     );
   }
@@ -250,45 +322,44 @@ export default function App() {
   if (isSetupMode) {
     return (
       <div className="flex flex-col h-full w-full bg-neutral-900 text-neutral-100 select-none overflow-hidden">
-        <header className="h-16 px-6 bg-neutral-950 border-b border-neutral-800 flex justify-between items-center shrink-0">
+        <header className="h-16 px-6 bg-neutral-950 border-b border-neutral-800 flex justify-between items-center shrink-0 z-20">
           <div>
             <h2 className="text-xl font-bold text-amber-500">Step 2: Locate Minimap</h2>
-            <p className="text-xs text-neutral-400">Drag box to cover minimap. Use corners to resize.</p>
+            <p className="text-xs text-neutral-400">Drag box to cover minimap. The app is now tracking the game window.</p>
           </div>
-          <button
-            onClick={() => setIsSetupMode(false)}
-            className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded flex items-center gap-2 transition-colors"
-          >
-            <CheckIcon /> Confirm Crop
-          </button>
+          <div className="flex gap-4">
+             <button
+                onClick={() => { setStream(null); setIsGameRunning(false); }}
+                className="px-4 py-2 text-neutral-400 hover:text-white text-sm"
+              >
+                Reset
+              </button>
+              <button
+                onClick={() => setIsSetupMode(false)}
+                className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded flex items-center gap-2 transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)]"
+              >
+                <CheckIcon /> Confirm Crop
+              </button>
+          </div>
         </header>
         
-        {/* Container for the video setup */}
-        <div className="flex-1 relative bg-black/80 flex items-center justify-center p-4 overflow-hidden">
-          
-          {/* 
-             We use inline-block relative container so the Overlay 
-             absolutely positions itself relative to the VIDEO IMAGE, not the screen.
-          */}
+        <div className="flex-1 relative bg-black/90 flex items-center justify-center p-4 overflow-hidden">
           <div className="relative inline-block shadow-2xl border border-neutral-800">
             <video
               ref={setupVideoRef}
               autoPlay
               playsInline
               muted
-              // Max dimensions ensure it fits within the setup window while maintaining aspect ratio
               className="max-h-[calc(100vh-120px)] max-w-[calc(100vw-40px)] block object-contain"
               onLoadedMetadata={(e) => {
                 setVideoDim({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight });
               }}
             />
             
-            {/* Interactive Crop Box Overlay */}
             <div
-              className="absolute border-2 border-amber-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] group cursor-move z-10"
+              className="absolute border-2 border-amber-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] group cursor-move z-10"
               onMouseDown={handleMouseDownBox}
               style={{
-                // Position using percentages of the container (which matches video size)
                 left: `${(cropRegion.x / videoDim.w) * 100}%`,
                 top: `${(cropRegion.y / videoDim.h) * 100}%`,
                 width: `${(cropRegion.width / videoDim.w) * 100}%`,
@@ -296,18 +367,12 @@ export default function App() {
               }}
             >
               <div className="absolute -top-7 left-0 bg-amber-500 text-black text-xs px-2 py-0.5 font-bold pointer-events-none whitespace-nowrap rounded-t">
-                MINIMAP
+                MINIMAP ZONE
               </div>
-              
-              {/* Resize Handles */}
               <div className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-white border border-black cursor-nwse-resize z-20" onMouseDown={handleMouseDownHandle('nw')} />
               <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white border border-black cursor-nesw-resize z-20" onMouseDown={handleMouseDownHandle('ne')} />
               <div className="absolute -bottom-1.5 -left-1.5 w-4 h-4 bg-white border border-black cursor-nesw-resize z-20" onMouseDown={handleMouseDownHandle('sw')} />
               <div className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-white border border-black cursor-nwse-resize z-20" onMouseDown={handleMouseDownHandle('se')} />
-              
-              {/* Crosshair guidelines */}
-              <div className="absolute top-1/2 left-0 w-full h-px bg-amber-500/30 pointer-events-none" />
-              <div className="absolute left-1/2 top-0 h-full w-px bg-amber-500/30 pointer-events-none" />
             </div>
           </div>
         </div>
@@ -318,11 +383,9 @@ export default function App() {
   // 3. Main Companion View
   return (
     <div className="flex h-full w-full bg-neutral-950 font-sans overflow-hidden">
-      {/* Sidebar Controls */}
+      {/* Sidebar */}
       <aside className="w-16 md:w-20 bg-neutral-900 border-r border-neutral-800 flex flex-col items-center py-4 gap-4 z-10 shrink-0">
-        
         <div className="flex flex-col gap-3 w-full px-2">
-           {/* Color Picker */}
            <div className="flex flex-wrap gap-1 justify-center mb-2">
             {['#ef4444', '#22c55e', '#eab308', '#3b82f6', '#ffffff'].map(c => (
               <button
@@ -333,78 +396,32 @@ export default function App() {
               />
             ))}
           </div>
-
-          <ToolButton 
-            active={activeTool === ToolType.PEN} 
-            onClick={() => setActiveTool(ToolType.PEN)}
-            icon={<PenIcon />}
-            label="Pen"
-          />
-          <ToolButton 
-            active={activeTool === ToolType.MARKER} 
-            onClick={() => setActiveTool(ToolType.MARKER)}
-            icon={<div className="w-4 h-4 rounded-full bg-red-500 border border-white"></div>}
-            label="Ping"
-          />
-          <ToolButton 
-            active={false} 
-            onClick={() => { setDrawings([]); setMarkers([]); }}
-            icon={<TrashIcon />}
-            label="Clear"
-            variant="danger"
-          />
+          <ToolButton active={activeTool === ToolType.PEN} onClick={() => setActiveTool(ToolType.PEN)} icon={<PenIcon />} label="Pen" />
+          <ToolButton active={activeTool === ToolType.MARKER} onClick={() => setActiveTool(ToolType.MARKER)} icon={<div className="w-4 h-4 rounded-full bg-red-500 border border-white"></div>} label="Ping" />
+          <ToolButton active={false} onClick={() => { setDrawings([]); setMarkers([]); }} icon={<TrashIcon />} label="Clear" variant="danger" />
         </div>
 
         <div className="mt-auto flex flex-col gap-3 w-full px-2">
            {hasApiKey && (
              <>
-               <button
-                onClick={() => setIsMuted(!isMuted)}
-                className={`flex flex-col items-center p-2 rounded-lg transition-colors ${isMuted ? 'text-red-400' : 'text-neutral-400 hover:text-white'}`}
-                title={isMuted ? "Unmute AI" : "Mute AI"}
-               >
+               <button onClick={() => setIsMuted(!isMuted)} className={`flex flex-col items-center p-2 rounded-lg transition-colors ${isMuted ? 'text-red-400' : 'text-neutral-400 hover:text-white'}`} title={isMuted ? "Unmute AI" : "Mute AI"}>
                  {isMuted ? <VolumeXIcon /> : <VolumeIcon />}
                </button>
-
-               <button
-                onClick={handleAnalyze}
-                disabled={isAnalyzing}
-                className={`flex flex-col items-center p-3 rounded-xl transition-all ${
-                  isAnalyzing 
-                  ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' 
-                  : 'bg-purple-900/50 text-purple-300 hover:bg-purple-800/50 hover:text-white border border-purple-700'
-                }`}
-              >
-                {isAnalyzing ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mb-1"></div>
-                ) : (
-                  <BrainIcon />
-                )}
+               <button onClick={handleAnalyze} disabled={isAnalyzing} className={`flex flex-col items-center p-3 rounded-xl transition-all ${isAnalyzing ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-purple-900/50 text-purple-300 hover:bg-purple-800/50 hover:text-white border border-purple-700'}`}>
+                {isAnalyzing ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mb-1"></div> : <BrainIcon />}
                 <span className="text-[9px] mt-1 uppercase font-bold">Scan</span>
               </button>
              </>
            )}
-
           <div className="h-px bg-neutral-700 w-full my-1"></div>
-
-          <button
-            onClick={() => setIsSetupMode(true)}
-            className="flex flex-col items-center p-2 text-neutral-500 hover:text-neutral-300 transition-colors"
-          >
+          <button onClick={() => setIsSetupMode(true)} className="flex flex-col items-center p-2 text-neutral-500 hover:text-neutral-300 transition-colors">
             <div className="scale-75"><MonitorIcon /></div>
             <span className="text-[9px] mt-1">Adjust</span>
-          </button>
-          
-           <button
-            onClick={handleStopCapture}
-            className="flex flex-col items-center p-2 text-red-900 hover:text-red-500 transition-colors"
-          >
-            <div className="scale-75"><XIcon /></div>
           </button>
         </div>
       </aside>
 
-      {/* Main Canvas Area */}
+      {/* Main Area */}
       <main className="flex-1 relative bg-black overflow-hidden flex flex-col">
         <MapCanvas
           videoStream={stream}
@@ -417,8 +434,6 @@ export default function App() {
           selectedColor={selectedColor}
           onCanvasRef={(ref) => canvasRef.current = ref}
         />
-
-        {/* AI Tactical Toast (Minimal) */}
         {latestAlert && latestAlert.text && (
           <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-neutral-900/95 border-l-4 border-purple-500 text-white px-6 py-4 rounded shadow-2xl backdrop-blur-md flex items-center gap-4 z-50">
              <div className="text-purple-400"><BrainIcon /></div>
@@ -433,7 +448,6 @@ export default function App() {
   );
 }
 
-// Sub-component for Tool Buttons
 const ToolButton = ({ active, onClick, icon, label, variant = 'default' }: any) => (
   <button
     onClick={onClick}
