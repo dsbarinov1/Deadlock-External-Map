@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0a0a0a" />
     <title>Deadlock Map Companion</title>
-    <!-- Use specific webmanifest extension to avoid confusion with Overwolf's manifest.json -->
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Use relative path for manifest -->
+    <link rel="manifest" href="manifest.webmanifest" />
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       /* Custom scrollbar for a tech/gaming feel */
@@ -27,9 +27,28 @@
       
       body {
         user-select: none; /* Disable text selection for app-like feel */
+        background-color: #0a0a0a;
+        color: #f5f5f5;
+      }
+
+      /* Loading spinner styles */
+      #loading-overlay {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 0;
       }
     </style>
-<script type="importmap">
+    <!-- Error Trap: Alerts if the app crashes before React loads -->
+    <script>
+      window.onerror = function(message, source, lineno, colno, error) {
+        alert("App Crash: " + message + "\nLine: " + lineno);
+      };
+    </script>
+  <script type="importmap">
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.4",
@@ -43,7 +62,13 @@
 </script>
 </head>
   <body class="bg-neutral-950 text-neutral-100 overflow-hidden h-screen w-screen">
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <div id="root">
+      <div id="loading-overlay">
+        <h2 class="text-xl font-bold text-amber-500 mb-2">LOADING...</h2>
+        <p class="text-neutral-500 text-sm">Initializing Deadlock Companion</p>
+      </div>
+    </div>
+    <!-- Use relative path for script entry -->
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>

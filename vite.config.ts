@@ -14,9 +14,11 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
     },
     define: {
-      // Polyfill process.env for the Google GenAI SDK and App usage
-      'process.env.API_KEY': JSON.stringify(env.API_KEY),
-      'process.env': process.env
+      // Properly polyfill process.env for the browser
+      // We do NOT want to pass the whole server process.env to the client for security and size reasons
+      'process.env': {
+        API_KEY: env.API_KEY || ''
+      }
     }
   };
 });
