@@ -9,70 +9,108 @@ const DEADLOCK_GAME_ID = 24201;
 const INITIAL_CROP: CropRegion = { x: 0, y: 0, width: 300, height: 300 };
 
 // ==========================================
-// COMPONENT: BACKGROUND CONTROLLER
-// (Runs invisibly, manages app lifecycle)
+// BACKGROUND LOGIC (Singleton Pattern)
 // ==========================================
-const BackgroundController = () => {
-  useEffect(() => {
-    if (typeof window.overwolf === 'undefined') {
-      console.warn("BackgroundController: Overwolf object not found.");
-      return;
+class BackgroundControllerClass {
+  private static _instance: BackgroundControllerClass;
+  
+  private constructor() {
+    this.init();
+  }
+
+  public static instance(): BackgroundControllerClass {
+    if (!this._instance) {
+      this._instance = new BackgroundControllerClass();
     }
+    return this._instance;
+  }
 
-    console.log("[Background] Controller Started");
-
-    const registerEvents = () => {
-      // 1. Listen for Game Launch/Info Updates
-      window.overwolf.games.onGameInfoUpdated.addListener(onGameInfoUpdated);
-
-      // 2. Check if game is already running on startup
-      window.overwolf.games.getRunningGameInfo((res: any) => {
-        if (res && res.isRunning && Math.floor(res.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
-           console.log("[Background] Game running on start, opening window.");
-           openMainWindow();
-        }
-      });
-      
-      // 3. Listen for App Launch Events (e.g. from dock)
-      window.overwolf.extensions.onAppLaunchTriggered.addListener(() => {
-        openMainWindow();
-      });
-    };
-
-    const onGameInfoUpdated = (event: any) => {
-      if (event && event.gameInfo && event.gameInfo.isRunning) {
-         if (Math.floor(event.gameInfo.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
-            console.log("[Background] Deadlock detected via event.");
-            openMainWindow();
-         }
+  private init() {
+    console.log("[Background] Initializing...");
+    this.registerEvents();
+    
+    // Check if game is running on startup
+    this.isGameRunning().then(isRunning => {
+      if (isRunning) {
+        console.log("[Background] Game running on start.");
+        this.restoreWindow('MainWindow');
+        this.restoreWindow('Overlay'); // Restore overlay so it's active in game
       }
-    };
+    });
+  }
 
-    const openMainWindow = () => {
-      window.overwolf.windows.obtainDeclaredWindow("MainWindow", (result: any) => {
-        if (result.status === "success") {
-          window.overwolf.windows.restore(result.window.id, () => {
-              console.log("[Background] MainWindow restored");
-          });
+  private registerEvents() {
+    // Event: App Launch (Dock click, Settings Relaunch, etc)
+    overwolf.extensions.onAppLaunchTriggered.addListener((e) => {
+      console.log("[Background] App Launch Triggered");
+      this.restoreWindow('MainWindow');
+      this.restoreWindow('Overlay');
+    });
+
+    // Event: Game Launch/Info Update
+    overwolf.games.onGameInfoUpdated.addListener((e) => {
+      if (e && e.gameInfo && e.gameInfo.isRunning) {
+        if (Math.floor(e.gameInfo.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
+           console.log("[Background] Game Info Updated: Running");
+           this.restoreWindow('MainWindow');
+           this.restoreWindow('Overlay');
+        }
+      }
+    });
+
+    // Event: Game Launch specific
+    overwolf.games.onGameLaunched.addListener((e) => {
+        if (Math.floor(e.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
+            console.log("[Background] Game Launched");
+            this.restoreWindow('MainWindow');
+            this.restoreWindow('Overlay');
+        }
+    });
+  }
+
+  private async isGameRunning(): Promise<boolean> {
+    return new Promise((resolve) => {
+      overwolf.games.getRunningGameInfo((res) => {
+        if (res && res.isRunning && Math.floor(res.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
+          resolve(true);
+        } else {
+          resolve(false);
         }
       });
-    };
+    });
+  }
 
-    registerEvents();
+  private restoreWindow(windowName: string) {
+    overwolf.windows.obtainDeclaredWindow(windowName, (result) => {
+      if (result.status === "success") {
+        overwolf.windows.restore(result.window.id, (res) => {
+            console.log(`[Background] Restored ${windowName}:`, res.status);
+        });
+      } else {
+          console.error(`[Background] Failed to obtain ${windowName}`, result);
+      }
+    });
+  }
+}
 
-    // Cleanup
-    return () => {
-       window.overwolf.games.onGameInfoUpdated.removeListener(onGameInfoUpdated);
-    };
-  }, []);
-
-  return <div style={{ color: 'white' }}>Background Controller Active</div>;
-};
-
+const BackgroundWindow = () => {
+    useEffect(() => {
+        if (typeof window.overwolf !== 'undefined') {
+            BackgroundControllerClass.instance();
+        }
+    }, []);
+    return <div className="p-4 text-white">Background Controller Running v1.1.3</div>;
+}
 
 // ==========================================
-// COMPONENT: MAIN WINDOW UI
-// (The visible app)
+// OVERLAY WINDOW (Invisible, required for settings)
+// ==========================================
+const OverlayWindow = () => {
+    return null; // Invisible component
+}
+
+// ==========================================
+// MAIN DESKTOP WINDOW
 // ==========================================
 const MainWindow = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -100,9 +138,9 @@ const MainWindow = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const setupVideoRef = useRef<HTMLVideoElement>(null);
   const [videoDim, setVideoDim] = useState({ w: 1920, h: 1080 });
-  const [currentWindow, setCurrentWindow] = useState<any>(null);
+  const [currentWindowId, setCurrentWindowId] = useState<string | null>(null);
 
-  // Interaction State for Setup
+  // Interaction State
   const [interaction, setInteraction] = useState<{
     type: 'idle' | 'moving' | 'resizing';
     handle?: 'nw' | 'ne' | 'sw' | 'se';
@@ -112,57 +150,32 @@ const MainWindow = () => {
 
   useEffect(() => { localStorage.setItem('deadlock-map-crop', JSON.stringify(cropRegion)); }, [cropRegion]);
 
-  // Window Management
+  // Init
   useEffect(() => {
     if (typeof window.overwolf === 'undefined') {
-        // Not in Overwolf (Browser Dev Mode)
         setStatusMessage("Browser Dev Mode");
         setShowManualButton(true);
         return;
     }
 
-    window.overwolf.windows.getCurrentWindow((result: any) => {
-      if (result.status === 'success') {
-        setCurrentWindow(result.window);
-        // Try to move to 2nd monitor after a short delay
-        setTimeout(() => moveToSecondMonitor(result.window.id), 1000);
-      }
+    // Get current window ID for drag operations
+    overwolf.windows.getCurrentWindow((result) => {
+        if (result.status === "success") setCurrentWindowId(result.window.id);
     });
 
     // Auto-connect loop
     const connect = () => {
-        if (typeof window.overwolf === 'undefined') return;
-
-        window.overwolf.games.getRunningGameInfo((res: any) => {
+        overwolf.games.getRunningGameInfo((res: any) => {
             if (res && res.isRunning && Math.floor(res.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
                 detectAndCapture(res);
             } else {
                 setStatusMessage("Waiting for Game...");
-                // Check again in 2s
                 setTimeout(connect, 2000);
             }
         });
     }
     connect();
-
   }, []);
-
-  const moveToSecondMonitor = (windowId: string) => {
-    if (typeof window.overwolf === 'undefined') return;
-
-    window.overwolf.utils.getMonitorsList((res: any) => {
-      if (res.monitors && res.monitors.length > 1) {
-        const targetMonitor = res.monitors.find((m: any) => !m.isPrimary) || res.monitors[1];
-        if (targetMonitor) {
-          const winWidth = 1200;
-          const winHeight = 800;
-          const x = targetMonitor.x + (targetMonitor.width / 2) - (winWidth / 2);
-          const y = targetMonitor.y + (targetMonitor.height / 2) - (winHeight / 2);
-          window.overwolf.windows.changePosition(windowId, Math.floor(x), Math.floor(y));
-        }
-      }
-    });
-  };
 
   const detectAndCapture = async (gameInfo: any) => {
     setStatusMessage("Game Found. Syncing...");
@@ -172,7 +185,6 @@ const MainWindow = () => {
         return;
     }
 
-    // STRATEGY: Monitor Capture (Most Reliable)
     window.overwolf.utils.getMonitorsList(async (res: any) => {
         if (!res.monitors || res.monitors.length === 0) {
             setStatusMessage("Monitor Error");
@@ -180,7 +192,7 @@ const MainWindow = () => {
             return;
         }
 
-        // Find monitor with game
+        // Logic: Find monitor overlapping with game logic coordinates
         const cx = (gameInfo.logicalLeft || 0) + (gameInfo.width || 1920)/2;
         const cy = (gameInfo.logicalTop || 0) + (gameInfo.height || 1080)/2;
         const monitor = res.monitors.find((m: any) => cx >= m.x && cx <= m.x+m.width && cy >= m.y && cy <= m.y+m.height) || res.monitors[0];
@@ -199,7 +211,7 @@ const MainWindow = () => {
             setStream(stream);
             setVideoDim({ w: monitor.width, h: monitor.height });
             
-            // Adjust crop if it looks fresh
+            // Adjust crop if needed (first run)
             if (cropRegion.width === 300 && cropRegion.x === 0) {
                 setCropRegion({ x: monitor.width/2 - 150, y: monitor.height/2 - 150, width: 300, height: 300 });
             }
@@ -244,12 +256,12 @@ const MainWindow = () => {
     setIsAnalyzing(false);
   };
 
-  // Sync Video
+  // Sync Video Ref
   useEffect(() => {
     if (isSetupMode && setupVideoRef.current && stream) setupVideoRef.current.srcObject = stream;
   }, [isSetupMode, stream]);
 
-  // Interaction Logic (Move/Resize Crop)
+  // Interaction Logic
   const handleBoxDown = (e: React.MouseEvent) => { e.preventDefault(); setInteraction({type: 'moving', startMouse: {x:e.clientX, y:e.clientY}, startCrop: {...cropRegion}}); };
   const handleHandleDown = (h: any) => (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setInteraction({type: 'resizing', handle: h, startMouse: {x:e.clientX, y:e.clientY}, startCrop: {...cropRegion}}); };
   
@@ -286,13 +298,10 @@ const MainWindow = () => {
       return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
   }, [interaction, videoDim]);
 
+  const dragMove = () => currentWindowId && window.overwolf?.windows.dragMove(currentWindowId);
+  const minWin = () => currentWindowId && window.overwolf?.windows.minimize(currentWindowId);
+  const closeWin = () => currentWindowId && window.overwolf?.windows.close(currentWindowId);
 
-  // Window Controls
-  const dragMove = () => currentWindow && window.overwolf?.windows.dragMove(currentWindow.id);
-  const minWin = () => currentWindow && window.overwolf?.windows.minimize(currentWindow.id);
-  const closeWin = () => currentWindow && window.overwolf?.windows.close(currentWindow.id);
-
-  // --- RENDER ---
   const Header = () => (
     <div onMouseDown={dragMove} className="h-8 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-3 shrink-0 select-none cursor-move">
         <div className="flex items-center gap-2 text-amber-500 font-bold tracking-wider text-xs">DEADLOCK COMPANION</div>
@@ -303,7 +312,6 @@ const MainWindow = () => {
     </div>
   );
 
-  // 1. Loading
   if (!stream) {
       return (
           <div className="flex flex-col h-full w-full bg-neutral-950 border border-neutral-800">
@@ -321,7 +329,6 @@ const MainWindow = () => {
       );
   }
 
-  // 2. Setup
   if (isSetupMode) {
       return (
           <div className="flex flex-col h-full w-full bg-neutral-900 text-neutral-100 border border-neutral-800">
@@ -349,7 +356,6 @@ const MainWindow = () => {
       );
   }
 
-  // 3. Main
   return (
     <div className="flex flex-col h-full w-full bg-neutral-950 font-sans border border-neutral-800">
         <Header />
@@ -407,18 +413,25 @@ export default function App() {
     }
 
     // Ask Overwolf which window this is
-    window.overwolf.windows.getCurrentWindow((result: any) => {
+    window.overwolf.windows.getCurrentWindow((result) => {
         if (result.status === "success") {
             setCurrentWindowName(result.window.name);
+        } else {
+            // Fallback for extreme edge cases
+            console.error("Could not determine window type");
         }
     });
   }, []);
 
-  if (!currentWindowName) return <div className="p-4 text-xs text-neutral-500">Loading...</div>;
+  if (!currentWindowName) return <div className="p-4 text-xs text-neutral-500">Loading Overwolf Context...</div>;
 
   // ROUTING BASED ON WINDOW NAME
   if (currentWindowName === "BackgroundWindow") {
-    return <BackgroundController />;
+    return <BackgroundWindow />;
+  }
+  
+  if (currentWindowName === "Overlay") {
+      return <OverlayWindow />;
   }
 
   return <MainWindow />;

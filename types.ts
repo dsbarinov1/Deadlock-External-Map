@@ -34,4 +34,5 @@ declare global {
   interface Window {
     overwolf: any;
   }
+  var overwolf: any;
 }
