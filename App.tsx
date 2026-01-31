@@ -5,7 +5,6 @@ import { PenIcon, TrashIcon, MonitorIcon, BrainIcon, VolumeIcon, VolumeXIcon, XI
 import { CropRegion, DrawingPath, Marker, ToolType } from './types';
 
 // --- CONSTANTS ---
-const DEADLOCK_GAME_ID = 24201;
 const INITIAL_CROP: CropRegion = { x: 0, y: 0, width: 300, height: 300 };
 
 // ==========================================
@@ -34,7 +33,7 @@ const BackgroundController = () => {
       });
       
       // 3. Listen for App Launch Events (e.g. from dock)
-      window.overwolf.extensions.onAppLaunchTriggered.addListener((e: any) => {
+      window.overwolf.extensions.onAppLaunchTriggered.addListener(() => {
         openMainWindow();
       });
     };
@@ -51,7 +50,7 @@ const BackgroundController = () => {
     const openMainWindow = () => {
       window.overwolf.windows.obtainDeclaredWindow("MainWindow", (result: any) => {
         if (result.status === "success") {
-          window.overwolf.windows.restore(result.window.id, (res: any) => {
+          window.overwolf.windows.restore(result.window.id, () => {
               console.log("[Background] MainWindow restored");
           });
         }
