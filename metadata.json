@@ -1,0 +1,7 @@
+{
+  "name": "Deadlock Map Companion",
+  "description": "A tactical companion app for Deadlock. Mirror your minimap to a second screen, draw tactical lines, and use AI to analyze map positioning.",
+  "requestFramePermissions": [
+    "display-capture"
+  ]
+}
