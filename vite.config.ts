@@ -7,6 +7,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, (process as any).cwd(), '');
   return {
     plugins: [react()],
+    // CRITICAL for Overwolf: Use relative paths because the app runs from local file system
+    base: './', 
     server: {
       port: 3000,
       strictPort: true,

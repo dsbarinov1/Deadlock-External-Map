@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { analyzeMapSnapshot, TacticalAlert } from './services/geminiService';
 import MapCanvas from './components/MapCanvas';
-import { PenIcon, EraserIcon, TrashIcon, MonitorIcon, BrainIcon, CheckIcon, XIcon, VolumeIcon, VolumeXIcon } from './components/IconSymbols';
+import { PenIcon, TrashIcon, MonitorIcon, BrainIcon, CheckIcon, XIcon, VolumeIcon, VolumeXIcon } from './components/IconSymbols';
 import { CropRegion, DrawingPath, Marker, ToolType } from './types';
 
 const INITIAL_CROP: CropRegion = { x: 0, y: 0, width: 300, height: 300 };
@@ -33,11 +33,6 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const hasApiKey = !!process.env.API_KEY;
   
-  // Install Prompt State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [showInstallHelp, setShowInstallHelp] = useState(false);
-  
   // Canvas Ref for screenshotting
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -58,43 +53,10 @@ export default function App() {
     localStorage.setItem('deadlock-map-crop', JSON.stringify(cropRegion));
   }, [cropRegion]);
 
-  // Handle PWA Install Prompt
-  useEffect(() => {
-    // Check if already in standalone mode
-    const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
-    setIsStandalone(isStandaloneMode);
-
-    // Check if the event was already captured globally in index.html
-    if ((window as any).deferredInstallPrompt) {
-        setDeferredPrompt((window as any).deferredInstallPrompt);
-    }
-
-    const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      (window as any).deferredInstallPrompt = e;
-      console.log("Install prompt captured in React");
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setDeferredPrompt(null);
-        (window as any).deferredInstallPrompt = null;
-      }
-    } else {
-      // If no prompt is available, show the help modal
-      setShowInstallHelp(true);
-    }
-  };
-
   const startScreenCapture = async () => {
     try {
+      // Note: In Overwolf, standard getDisplayMedia works, but traditionally OW apps use 
+      // overwolf.streaming or overwolf.media APIs. For MVP, we stick to web standard.
       const mediaStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: false
@@ -276,50 +238,8 @@ export default function App() {
             <MonitorIcon />
             Select Game Screen
           </button>
-          
-          {!isStandalone && (
-            <button
-              onClick={handleInstallClick}
-              className="flex items-center gap-3 px-8 py-4 bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-lg rounded shadow-lg border border-neutral-600 transition-all"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-              Install App
-            </button>
-          )}
         </div>
-
-        {/* Installation Help Modal */}
-        {showInstallHelp && (
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowInstallHelp(false)}>
-                <div className="bg-neutral-900 border border-amber-500/50 rounded-2xl p-8 max-w-lg shadow-2xl relative" onClick={e => e.stopPropagation()}>
-                    <button className="absolute top-4 right-4 text-neutral-400 hover:text-white" onClick={() => setShowInstallHelp(false)}><XIcon/></button>
-                    <h3 className="text-2xl font-bold text-amber-500 mb-4">How to Install</h3>
-                    <p className="text-neutral-300 mb-6">
-                        The browser is not allowing automatic installation. Please install manually:
-                    </p>
-                    <ol className="list-decimal pl-5 space-y-4 text-neutral-200">
-                        <li>
-                            Look at the right side of your browser's address bar (URL bar).
-                        </li>
-                        <li>
-                            Find an icon that looks like a <strong>Monitor with a down arrow</strong> or a <strong>Plus (+)</strong> sign.
-                            <div className="mt-2 flex gap-2 opacity-70">
-                                <span className="border border-neutral-600 rounded px-2 py-1 text-xs">Chrome / Edge</span>
-                                <span className="border border-neutral-600 rounded px-2 py-1 text-xs">Yandex</span>
-                            </div>
-                        </li>
-                        <li>
-                            Click it and select <strong>"Install Deadlock Map Companion"</strong>.
-                        </li>
-                    </ol>
-                    <div className="mt-8 pt-4 border-t border-neutral-800 flex justify-end">
-                        <button onClick={() => setShowInstallHelp(false)} className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded text-sm text-white">
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
+        <p className="mt-8 text-neutral-600 text-xs">Running in Overwolf Mode</p>
       </div>
     );
   }
@@ -465,46 +385,6 @@ export default function App() {
           >
             <div className="scale-75"><XIcon /></div>
           </button>
-          
-          {!isStandalone && (
-            <button
-              onClick={handleInstallClick}
-              className="flex flex-col items-center p-2 text-blue-400 hover:text-blue-300 transition-colors"
-              title="Install Desktop App"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-            </button>
-          )}
-
-           {/* Install Help Modal (Sidebar Version? Or just reuse the main one?) */}
-           {/* If user clicks sidebar button, we reuse the same logic. */}
-           {showInstallHelp && isSetupMode === false && (
-               <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowInstallHelp(false)}>
-                <div className="bg-neutral-900 border border-amber-500/50 rounded-2xl p-8 max-w-lg shadow-2xl relative" onClick={e => e.stopPropagation()}>
-                    <button className="absolute top-4 right-4 text-neutral-400 hover:text-white" onClick={() => setShowInstallHelp(false)}><XIcon/></button>
-                    <h3 className="text-2xl font-bold text-amber-500 mb-4">How to Install</h3>
-                    <p className="text-neutral-300 mb-6">
-                        The browser is not allowing automatic installation. Please install manually:
-                    </p>
-                    <ol className="list-decimal pl-5 space-y-4 text-neutral-200">
-                        <li>
-                            Look at the right side of your browser's address bar.
-                        </li>
-                        <li>
-                            Find an icon that looks like a <strong>Monitor with a down arrow</strong> or a <strong>Plus (+)</strong> sign.
-                        </li>
-                        <li>
-                            Click it and select <strong>"Install Deadlock Map Companion"</strong>.
-                        </li>
-                    </ol>
-                     <div className="mt-8 pt-4 border-t border-neutral-800 flex justify-end">
-                        <button onClick={() => setShowInstallHelp(false)} className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded text-sm text-white">
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-           )}
         </div>
       </aside>
 

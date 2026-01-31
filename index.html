@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0a0a0a" />
     <title>Deadlock Map Companion</title>
-    <link rel="manifest" href="/manifest.json" />
+    <!-- Point to webmanifest for browser usage, leaving manifest.json for Overwolf -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       /* Custom scrollbar for a tech/gaming feel */
@@ -31,9 +32,9 @@
   <script type="importmap">
 {
   "imports": {
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "react/": "https://esm.sh/react@^19.2.4/",
     "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
     "vite": "https://esm.sh/vite@^7.3.1",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
