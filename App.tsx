@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { analyzeMapSnapshot, TacticalAlert } from './services/geminiService';
 import MapCanvas from './components/MapCanvas';
-import { PenIcon, TrashIcon, MonitorIcon, BrainIcon, CheckIcon, VolumeIcon, VolumeXIcon, XIcon } from './components/IconSymbols';
+import { PenIcon, TrashIcon, MonitorIcon, BrainIcon, VolumeIcon, VolumeXIcon, XIcon } from './components/IconSymbols';
 import { CropRegion, DrawingPath, Marker, ToolType } from './types';
 
 const INITIAL_CROP: CropRegion = { x: 0, y: 0, width: 300, height: 300 };
