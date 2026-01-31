@@ -3,12 +3,12 @@
   "type": "WebApp",
   "meta": {
     "name": "Deadlock Map Companion",
-    "version": "1.0.0",
-    "minimum_overwolf_version": "0.198.0",
     "author": "Developer",
+    "version": "1.0.0",
+    "minimum-overwolf-version": "0.198.0",
+    "description": "Tactical map analysis for Deadlock",
     "icon": "icon.png",
-    "icon_gray": "icon_gray.png",
-    "description": "Tactical map analysis for Deadlock"
+    "icon_gray": "icon_gray.png"
   },
   "permissions": [
     "DesktopStreaming",
@@ -19,9 +19,10 @@
     "windows": {
       "MainWindow": {
         "file": "index.html",
-        "style": {
-          "dim_mode": "InGame"
-        },
+        "desktop_only": true,
+        "native_window": true,
+        "resizable": true,
+        "transparent": false,
         "size": {
           "width": 1200,
           "height": 800
@@ -29,11 +30,7 @@
         "min_size": {
           "width": 600,
           "height": 400
-        },
-        "desktop_only": false,
-        "transparent": false,
-        "resizable": true,
-        "use_os_windowing": true
+        }
       }
     }
   }
