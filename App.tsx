@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import BackgroundWindow from './windows/BackgroundWindow';
 import DesktopWindow from './windows/DesktopWindow';
 import { WINDOW_NAMES } from './services/windows';

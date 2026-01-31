@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { WindowService, WINDOW_NAMES } from '../services/windows';
 
 const DEADLOCK_GAME_ID = 24201;
@@ -8,14 +8,14 @@ const BackgroundWindow = () => {
     console.log("[Background] Initialized");
 
     // 1. Register Hotkeys
-    overwolf.settings.hotkeys.onPressed.addListener((e) => {
+    overwolf.settings.hotkeys.onPressed.addListener((e: any) => {
       if (e.name === "toggle_app") {
         WindowService.toggle(WINDOW_NAMES.DESKTOP);
       }
     });
 
     // 2. Register Game Launch Events
-    overwolf.games.onGameLaunched.addListener((e) => {
+    overwolf.games.onGameLaunched.addListener((e: any) => {
       if (Math.floor(e.classId / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
          console.log("[Background] Game Launched");
          // Optionally open overlay here, but let's stick to Desktop for the companion logic

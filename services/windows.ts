@@ -10,7 +10,7 @@ export const WINDOW_NAMES = {
 export class WindowService {
   public static async obtainWindow(name: string): Promise<any> {
     return new Promise((resolve, reject) => {
-      overwolf.windows.obtainDeclaredWindow(name, (result) => {
+      overwolf.windows.obtainDeclaredWindow(name, (result: any) => {
         if (result.status === 'success') {
           resolve(result.window);
         } else {
@@ -48,7 +48,7 @@ export class WindowService {
 
   public static async getRunningGameInfo(): Promise<any> {
     return new Promise((resolve) => {
-      overwolf.games.getRunningGameInfo((res) => resolve(res));
+      overwolf.games.getRunningGameInfo((res: any) => resolve(res));
     });
   }
 }
