@@ -41,14 +41,14 @@ class BackgroundControllerClass {
 
   private registerEvents() {
     // Event: App Launch (Dock click, Settings Relaunch, etc)
-    overwolf.extensions.onAppLaunchTriggered.addListener((e) => {
+    overwolf.extensions.onAppLaunchTriggered.addListener(() => {
       console.log("[Background] App Launch Triggered");
       this.restoreWindow('MainWindow');
       this.restoreWindow('Overlay');
     });
 
     // Event: Game Launch/Info Update
-    overwolf.games.onGameInfoUpdated.addListener((e) => {
+    overwolf.games.onGameInfoUpdated.addListener((e: any) => {
       if (e && e.gameInfo && e.gameInfo.isRunning) {
         if (Math.floor(e.gameInfo.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
            console.log("[Background] Game Info Updated: Running");
@@ -59,7 +59,7 @@ class BackgroundControllerClass {
     });
 
     // Event: Game Launch specific
-    overwolf.games.onGameLaunched.addListener((e) => {
+    overwolf.games.onGameLaunched.addListener((e: any) => {
         if (Math.floor(e.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
             console.log("[Background] Game Launched");
             this.restoreWindow('MainWindow');
@@ -70,7 +70,7 @@ class BackgroundControllerClass {
 
   private async isGameRunning(): Promise<boolean> {
     return new Promise((resolve) => {
-      overwolf.games.getRunningGameInfo((res) => {
+      overwolf.games.getRunningGameInfo((res: any) => {
         if (res && res.isRunning && Math.floor(res.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
           resolve(true);
         } else {
@@ -81,9 +81,9 @@ class BackgroundControllerClass {
   }
 
   private restoreWindow(windowName: string) {
-    overwolf.windows.obtainDeclaredWindow(windowName, (result) => {
+    overwolf.windows.obtainDeclaredWindow(windowName, (result: any) => {
       if (result.status === "success") {
-        overwolf.windows.restore(result.window.id, (res) => {
+        overwolf.windows.restore(result.window.id, (res: any) => {
             console.log(`[Background] Restored ${windowName}:`, res.status);
         });
       } else {
@@ -159,7 +159,7 @@ const MainWindow = () => {
     }
 
     // Get current window ID for drag operations
-    overwolf.windows.getCurrentWindow((result) => {
+    overwolf.windows.getCurrentWindow((result: any) => {
         if (result.status === "success") setCurrentWindowId(result.window.id);
     });
 
@@ -413,7 +413,7 @@ export default function App() {
     }
 
     // Ask Overwolf which window this is
-    window.overwolf.windows.getCurrentWindow((result) => {
+    window.overwolf.windows.getCurrentWindow((result: any) => {
         if (result.status === "success") {
             setCurrentWindowName(result.window.name);
         } else {
