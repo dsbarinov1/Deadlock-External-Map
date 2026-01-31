@@ -82,15 +82,12 @@ export default function App() {
         if (targetMonitor) {
           console.log("Found secondary monitor:", targetMonitor);
           // Center the window on that monitor
-          // Assuming window size 1200x800 from manifest
           const winWidth = 1200;
           const winHeight = 800;
           const x = targetMonitor.x + (targetMonitor.width / 2) - (winWidth / 2);
           const y = targetMonitor.y + (targetMonitor.height / 2) - (winHeight / 2);
           
           window.overwolf.windows.changePosition(windowId, Math.floor(x), Math.floor(y));
-        } else {
-          console.log("No secondary monitor found, staying on primary.");
         }
       }
     });
@@ -123,8 +120,8 @@ export default function App() {
 
     const onGameInfoUpdated = (event: any) => {
       if (event && event.gameInfo && event.gameInfo.isRunning) {
-        // Debounce slightly to ensure window handle is ready
-        setTimeout(() => detectAndCapture(event.gameInfo), 1000);
+        // Wait a bit for game to actually appear on screen
+        setTimeout(() => detectAndCapture(event.gameInfo), 1500);
       } else if (event && event.runningChanged === false) {
         setStream(null);
         setStatusMessage("Game closed. Waiting...");
@@ -148,16 +145,14 @@ export default function App() {
   }, []);
 
   const detectAndCapture = async (gameInfo: any) => {
-    // Basic validation
-    if (!gameInfo || !gameInfo.isRunning || !gameInfo.windowHandle) {
-        setStatusMessage("Game detected, but window handle missing.");
-        return;
-    }
+    if (!gameInfo || !gameInfo.isRunning) return;
 
-    setStatusMessage(`Syncing with ${gameInfo.title}...`);
-
+    // 1. Try Window Capture (Preferred, but often blocked)
+    setStatusMessage(`Found ${gameInfo.title}. Syncing...`);
+    
     try {
-      // AUTO-CAPTURE: No buttons.
+      if (!gameInfo.windowHandle) throw new Error("No handle");
+
       const constraints = {
         audio: false,
         video: {
@@ -169,60 +164,91 @@ export default function App() {
       } as any;
 
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      // If we got here, we have the stream!
-      setStream(mediaStream);
-      setVideoDim({ w: gameInfo.width || 1920, h: gameInfo.height || 1080 });
-      
-      // Set initial center crop
-      setCropRegion({
-        x: (gameInfo.width / 2) - 150,
-        y: (gameInfo.height / 2) - 150,
-        width: 300,
-        height: 300
-      });
+      handleStreamSuccess(mediaStream, gameInfo.width, gameInfo.height);
 
-      // Go directly to setup mode
-      setIsSetupMode(true); 
-      setStatusMessage("Active");
-
-    } catch (err) {
-      console.error("Auto-capture failed:", err);
-      // Fallback: If auto-fail, we just show the manual button as a last resort in the UI
-      setStatusMessage("Auto-sync failed. Retrying...");
+    } catch (windowError) {
+      console.warn("Window capture blocked/failed. Switching to Screen Capture strategy.", windowError);
+      setStatusMessage("Window sync blocked. Switching to Monitor sync...");
       
-      // Simple retry once after 2 seconds
-      setTimeout(async () => {
-          try {
-             // Retry exact same logic
-             const retryStream = await navigator.mediaDevices.getUserMedia({
+      // 2. Fallback: Screen Capture (Capture the whole monitor the game is on)
+      try {
+        await captureGameMonitor(gameInfo);
+      } catch (screenError) {
+        console.error("Screen capture failed too.", screenError);
+        setStatusMessage("Auto-sync failed. Please select manually below.");
+      }
+    }
+  };
+
+  const captureGameMonitor = async (gameInfo: any) => {
+    return new Promise<void>((resolve, reject) => {
+      window.overwolf.utils.getMonitorsList(async (res: any) => {
+        if (!res.monitors) {
+            reject("No monitors found");
+            return;
+        }
+
+        // Find the monitor that contains the center of the game window
+        const gameCenterX = (gameInfo.logicalLeft || 0) + (gameInfo.width || 1920) / 2;
+        const gameCenterY = (gameInfo.logicalTop || 0) + (gameInfo.height || 1080) / 2;
+
+        const monitor = res.monitors.find((m: any) => 
+            gameCenterX >= m.x && 
+            gameCenterX <= (m.x + m.width) &&
+            gameCenterY >= m.y &&
+            gameCenterY <= (m.y + m.height)
+        ) || res.monitors[0]; // Default to first monitor if math fails
+
+        console.log("Capturing monitor:", monitor.id);
+
+        try {
+            const constraints = {
                 audio: false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: `window:${gameInfo.windowHandle}`
+                        chromeMediaSourceId: `screen:${monitor.id}`
                     }
                 }
-             } as any);
-             setStream(retryStream);
-             setVideoDim({ w: gameInfo.width || 1920, h: gameInfo.height || 1080 });
-          } catch (retryErr) {
-             setStatusMessage("Sync blocked. Please select manually.");
-             // Only if retry fails do we give up on auto
-          }
-      }, 2000);
-    }
+            } as any;
+
+            const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            // Use monitor dimensions for videoDim
+            handleStreamSuccess(mediaStream, monitor.width, monitor.height);
+            resolve();
+        } catch (e) {
+            reject(e);
+        }
+      });
+    });
+  };
+
+  const handleStreamSuccess = (mediaStream: MediaStream, width: number, height: number) => {
+      setStream(mediaStream);
+      setVideoDim({ w: width || 1920, h: height || 1080 });
+      
+      // Set initial center crop
+      setCropRegion({
+        x: (width / 2) - 150,
+        y: (height / 2) - 150,
+        width: 300,
+        height: 300
+      });
+
+      setIsSetupMode(true); 
+      setStatusMessage("Active");
   };
   
   const manualCapture = async () => {
     try {
         const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-        setStream(mediaStream);
+        // @ts-ignore
         const track = mediaStream.getVideoTracks()[0];
         const settings = track.getSettings();
-        setVideoDim({ w: settings.width || 1920, h: settings.height || 1080 });
+        handleStreamSuccess(mediaStream, settings.width || 1920, settings.height || 1080);
     } catch(e) {
         console.error(e);
+        setStatusMessage("Manual selection cancelled.");
     }
   }
 
@@ -344,7 +370,7 @@ export default function App() {
                 <p className="text-neutral-500 font-mono text-xs mb-8 uppercase tracking-widest">{statusMessage}</p>
                 
                 {/* Fallback button only appears if auto-magic fails drastically */}
-                {statusMessage.includes("blocked") && (
+                {(statusMessage.includes("failed") || statusMessage.includes("cancelled")) && (
                     <button 
                         onClick={manualCapture}
                         className="px-6 py-2 border border-neutral-700 hover:bg-neutral-800 text-neutral-300 text-xs uppercase tracking-widest rounded transition-colors"
