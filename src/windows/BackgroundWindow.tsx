@@ -21,7 +21,7 @@ class BackgroundController {
       onGameEnded: this.toggleWindows.bind(this)
     });
 
-    overwolf.extensions.onAppLaunchTriggered.addListener(e => this.onAppLaunchTriggered(e));
+    overwolf.extensions.onAppLaunchTriggered.addListener((e: any) => this.onAppLaunchTriggered(e));
   };
 
   // Singleton instance

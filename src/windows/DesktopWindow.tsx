@@ -256,7 +256,7 @@ const DesktopWindow = () => {
                 </div>
             </aside>
             <main className="flex-1 relative bg-black overflow-hidden flex flex-col">
-                <MapCanvas videoStream={stream} cropRegion={cropRegion} drawings={drawings} setDrawings={setDrawings} markers={markers} setMarkers={setMarkers} activeTool={activeTool} selectedColor={selectedColor} onCanvasRef={r => canvasRef.current=r} />
+                <MapCanvas videoStream={stream} cropRegion={cropRegion} drawings={drawings} setDrawings={setDrawings} markers={markers} setMarkers={setMarkers} activeTool={activeTool} selectedColor={selectedColor} onCanvasRef={(r: any) => canvasRef.current=r} />
                 {latestAlert && latestAlert.text && (
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-neutral-900/95 border border-purple-500/50 text-white px-4 py-3 rounded shadow-2xl backdrop-blur-md flex items-center gap-3 z-50">
                         <div className="text-purple-400"><BrainIcon/></div>

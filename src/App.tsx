@@ -4,8 +4,6 @@ import BackgroundWindow from './windows/BackgroundWindow';
 import DesktopWindow from './windows/DesktopWindow';
 import { kWindowNames } from './consts';
 
-const OverlayWindow = () => <div style={{width: '100%', height: '100%'}}></div>;
-
 // ==========================================
 // ROOT APP ROUTER
 // ==========================================
