@@ -4,7 +4,7 @@
   "meta": {
     "name": "Deadlock Map Companion",
     "author": "Developer",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "minimum-overwolf-version": "0.198.0",
     "description": "Tactical map analysis for Deadlock",
     "icon": "icon.png",
@@ -21,7 +21,7 @@
       "MainWindow": {
         "file": "index.html",
         "desktop_only": true,
-        "native_window": true,
+        "native_window": false,
         "resizable": true,
         "transparent": false,
         "size": {
