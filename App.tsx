@@ -5,6 +5,7 @@ import { PenIcon, TrashIcon, MonitorIcon, BrainIcon, VolumeIcon, VolumeXIcon, XI
 import { CropRegion, DrawingPath, Marker, ToolType } from './types';
 
 // --- CONSTANTS ---
+const DEADLOCK_GAME_ID = 24201;
 const INITIAL_CROP: CropRegion = { x: 0, y: 0, width: 300, height: 300 };
 
 // ==========================================
@@ -26,7 +27,7 @@ const BackgroundController = () => {
 
       // 2. Check if game is already running on startup
       window.overwolf.games.getRunningGameInfo((res: any) => {
-        if (res && res.isRunning && Math.floor(res.id / 10) === 2420) {
+        if (res && res.isRunning && Math.floor(res.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
            console.log("[Background] Game running on start, opening window.");
            openMainWindow();
         }
@@ -40,7 +41,7 @@ const BackgroundController = () => {
 
     const onGameInfoUpdated = (event: any) => {
       if (event && event.gameInfo && event.gameInfo.isRunning) {
-         if (Math.floor(event.gameInfo.id / 10) === 2420) {
+         if (Math.floor(event.gameInfo.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
             console.log("[Background] Deadlock detected via event.");
             openMainWindow();
          }
@@ -59,13 +60,13 @@ const BackgroundController = () => {
 
     registerEvents();
 
-    // Keep alive
+    // Cleanup
     return () => {
        window.overwolf.games.onGameInfoUpdated.removeListener(onGameInfoUpdated);
     };
   }, []);
 
-  return <div style={{ color: 'white' }}>Background Controller Running...</div>;
+  return <div style={{ color: 'white' }}>Background Controller Active</div>;
 };
 
 
@@ -133,7 +134,7 @@ const MainWindow = () => {
         if (typeof window.overwolf === 'undefined') return;
 
         window.overwolf.games.getRunningGameInfo((res: any) => {
-            if (res && res.isRunning && Math.floor(res.id / 10) === 2420) {
+            if (res && res.isRunning && Math.floor(res.id / 10) === Math.floor(DEADLOCK_GAME_ID / 10)) {
                 detectAndCapture(res);
             } else {
                 setStatusMessage("Waiting for Game...");
@@ -396,17 +397,27 @@ const ToolButton = ({active, onClick, icon, variant='default'}:any) => (
 // ROOT APP ROUTER
 // ==========================================
 export default function App() {
-  const [isBackground, setIsBackground] = useState(false);
+  const [currentWindowName, setCurrentWindowName] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if we are running as the background page
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('mode') === 'background') {
-      setIsBackground(true);
+    // If not in Overwolf (e.g. browser dev), default to Main Window
+    if (typeof window.overwolf === 'undefined') {
+        setCurrentWindowName("MainWindow");
+        return;
     }
+
+    // Ask Overwolf which window this is
+    window.overwolf.windows.getCurrentWindow((result: any) => {
+        if (result.status === "success") {
+            setCurrentWindowName(result.window.name);
+        }
+    });
   }, []);
 
-  if (isBackground) {
+  if (!currentWindowName) return <div className="p-4 text-xs text-neutral-500">Loading...</div>;
+
+  // ROUTING BASED ON WINDOW NAME
+  if (currentWindowName === "BackgroundWindow") {
     return <BackgroundController />;
   }
 
