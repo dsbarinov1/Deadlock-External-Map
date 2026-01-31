@@ -27,14 +27,17 @@ class BackgroundControllerClass {
 
   private init() {
     console.log("[Background] Initializing...");
+    
+    // ALWAYS open the main window on app start, so the user sees the interface immediately.
+    this.restoreWindow('MainWindow');
+
     this.registerEvents();
     
-    // Check if game is running on startup
+    // Check if game is running on startup to also open overlay
     this.isGameRunning().then(isRunning => {
       if (isRunning) {
         console.log("[Background] Game running on start.");
-        this.restoreWindow('MainWindow');
-        this.restoreWindow('Overlay'); // Restore overlay so it's active in game
+        this.restoreWindow('Overlay'); 
       }
     });
   }
@@ -64,6 +67,13 @@ class BackgroundControllerClass {
             console.log("[Background] Game Launched");
             this.restoreWindow('MainWindow');
             this.restoreWindow('Overlay');
+        }
+    });
+
+    // Event: Hotkey Pressed
+    overwolf.settings.hotkeys.onPressed.addListener((e: any) => {
+        if (e.name === "toggle_app") {
+            this.restoreWindow('MainWindow');
         }
     });
   }
@@ -99,14 +109,15 @@ const BackgroundWindow = () => {
             BackgroundControllerClass.instance();
         }
     }, []);
-    return <div className="p-4 text-white">Background Controller Running v1.1.3</div>;
+    return <div className="p-4 text-white">Background Controller Running v1.1.4</div>;
 }
 
 // ==========================================
 // OVERLAY WINDOW (Invisible, required for settings)
 // ==========================================
 const OverlayWindow = () => {
-    return null; // Invisible component
+    // Render an empty div instead of null to ensure React mounts it properly
+    return <div style={{width: '100%', height: '100%', pointerEvents: 'none'}}></div>; 
 }
 
 // ==========================================
