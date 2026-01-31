@@ -43,7 +43,7 @@ class BackgroundControllerClass {
       this.restoreWindow('MainWindow');
     });
 
-    overwolf.games.onGameLaunched.addListener((e: any) => {
+    overwolf.games.onGameLaunched.addListener(() => {
         this.checkGameStatus();
     });
 
@@ -72,7 +72,7 @@ class BackgroundControllerClass {
   private restoreWindow(windowName: string) {
     overwolf.windows.obtainDeclaredWindow(windowName, (result: any) => {
       if (result.status === "success") {
-        overwolf.windows.restore(result.window.id, (res: any) => {});
+        overwolf.windows.restore(result.window.id, () => {});
       }
     });
   }
@@ -114,8 +114,6 @@ const MainWindow = () => {
 
   const [isSetupMode, setIsSetupMode] = useState(true);
   const [statusMessage, setStatusMessage] = useState("Ready");
-  // FORCE SHOW MANUAL BUTTON BY DEFAULT
-  const [showManualButton, setShowManualButton] = useState(true);
   
   // Tools
   const [drawings, setDrawings] = useState<DrawingPath[]>([]);
@@ -188,11 +186,9 @@ const MainWindow = () => {
             setVideoDim({ w: monitor.width, h: monitor.height });
             setIsSetupMode(true);
             setStatusMessage("Active");
-            setShowManualButton(false);
         } catch (e) {
             console.error(e);
             setStatusMessage("Auto-Sync Failed");
-            setShowManualButton(true);
         }
     });
   };
@@ -206,7 +202,6 @@ const MainWindow = () => {
         setStream(ms);
         setVideoDim({ w: s.width || 1920, h: s.height || 1080 });
         setIsSetupMode(true);
-        setShowManualButton(false);
     } catch(e) { 
         setStatusMessage("Selection Cancelled"); 
     }
