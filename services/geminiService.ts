@@ -1,22 +1,25 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Use process.env.API_KEY directly as required by guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export interface TacticalAlert {
   voice: string; // Very short string for TTS (e.g. "Gank Top")
   text: string;  // Slightly longer text for display
 }
 
 export const analyzeMapSnapshot = async (base64Image: string): Promise<TacticalAlert | null> => {
+  // 1. Check for API Key explicitly before initializing the SDK.
+  // This prevents the "API key must be set" crash during app startup.
   if (!process.env.API_KEY) {
-    return { voice: "API Key missing", text: "Configure API Key in settings" };
+    console.warn("API Key is missing in process.env");
+    return { voice: "System Error", text: "API Key Missing" };
   }
 
   // Remove data URL prefix if present
   const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg);base64,/, "");
 
   try {
+    // 2. Initialize the SDK *only* when the function is called and key is present.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: {
